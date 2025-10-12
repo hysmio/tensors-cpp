@@ -20,8 +20,8 @@ class Tensor {
     Tensor *grad;
 
     Tensor(const Tensor &other);
+    Tensor(std::vector<uint32_t> shape, float *data);
     Tensor(std::vector<uint32_t> shape, bool requires_grad);
-    Tensor(std::vector<uint32_t> &shape, float *data);
     ~Tensor();
 
     void zero();

@@ -2,6 +2,7 @@
 #include "autograd/grad_node.hpp"
 #include <numeric>
 #include <random>
+#include <vector>
 
 #include "linalg.hpp"
 
@@ -16,7 +17,7 @@ Tensor::Tensor(const Tensor &other)
 }
 
 Tensor::Tensor(std::vector<uint32_t> shape, bool requires_grad)
-    : allocated(true), size(0), shape(std::move(shape)), data(nullptr),
+    : allocated(true), size(0), shape(shape), data(nullptr),
       requires_grad(requires_grad), grad_fn(nullptr), grad(nullptr) {
 
     uint32_t size =
@@ -26,7 +27,7 @@ Tensor::Tensor(std::vector<uint32_t> shape, bool requires_grad)
     this->data = new float[size];
 }
 
-Tensor::Tensor(std::vector<uint32_t> &shape, float *data)
+Tensor::Tensor(std::vector<uint32_t> shape, float *data)
     : allocated(false), shape(shape), data(data), requires_grad(false), grad_fn(nullptr),
       grad(nullptr) {
 
@@ -81,7 +82,8 @@ Tensor Tensor::operator[](uint32_t index) {
 
     uint32_t size = std::accumulate(this->shape.begin() + 1, this->shape.end(), uint32_t(1),
                                     std::multiplies<>());
-    Tensor result({this->shape.begin() + 1, this->shape.end()}, this->data + size_t(index * size));
+    std::vector<uint32_t> new_shape(this->shape.begin() + 1, this->shape.end());
+    Tensor result(new_shape, (float*)(this->data + size_t(index * size)));
     return result;
 }
 
@@ -91,7 +93,8 @@ Tensor Tensor::operator[](uint32_t index) const {
 
     uint32_t size = std::accumulate(this->shape.begin() + 1, this->shape.end(), uint32_t(1),
                                     std::multiplies<>());
-    Tensor result({this->shape.begin() + 1, this->shape.end()}, this->data + size_t(index * size));
+    std::vector<uint32_t> new_shape(this->shape.begin() + 1, this->shape.end());
+    Tensor result(new_shape, this->data + size_t(index * size));
     return result;
 }
 
@@ -162,7 +165,8 @@ Tensor matmul(Tensor &a, Tensor &b) {
     assert(b.shape.size() == 2);
     assert(a.shape[1] == b.shape[0]);
 
-    Tensor result({a.shape[0], b.shape[1]}, a.requires_grad || b.requires_grad);
+    std::vector<uint32_t> new_shape({a.shape[0], b.shape[1]});
+    Tensor result(new_shape, a.requires_grad || b.requires_grad);
 
     sgemm(a.shape[0], a.shape[1], b.shape[1], 1.0F, a.data, b.data, 0.0F, result.data);
 
@@ -177,7 +181,8 @@ Tensor matmul(Tensor &a, Tensor &b) {
 // Autograd utility methods
 Tensor Tensor::transpose() {
     assert(this->shape.size() == 2);
-    Tensor result({this->shape[1], this->shape[0]}, this->requires_grad);
+    std::vector<uint32_t> new_shape({this->shape[1], this->shape[0]});
+    Tensor result(new_shape, this->requires_grad);
 
     for (uint32_t i = 0; i < this->shape[0]; i++) {
         for (uint32_t j = 0; j < this->shape[1]; j++) {

@@ -5,5 +5,5 @@
 
 class Module {
 public:
-    virtual Tensor forward(Tensor x) = 0;
+    virtual Tensor forward(Tensor &x) = 0;
 };

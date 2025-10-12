@@ -41,8 +41,8 @@ static std::ostream &operator<<(std::ostream &stream, const Tensor &tensor) {
 
 int main() {
     auto a = Tensor({1, 2}, true);
-    a.data[0] = 2.0f;
-    a.data[1] = 3.0f;
+    a.data[0] = 1.0f;
+    a.data[1] = 2.0f;
     auto b = Tensor({2, 1}, true);
     b.data[0] = 3.0f;
     b.data[1] = 4.0f;
@@ -51,10 +51,10 @@ int main() {
 
     std::cout << "a: " << a << ", a.grad: " << *a.grad << '\n';
     std::cout << "b: " << b << ", b.grad: " << *b.grad << '\n';
-    std::cout << "c: " << c << ", c.grad: " << *c.grad << '\n';
+    std::cout << "c: " << c << ", c.grad: " << *c.grad << "\n\n";
+
 
     Tensor x({5, 2}, false);
-    x.random();
 
     for (uint32_t i = 0; i < x.shape[0]; i++) {
         for (uint32_t j = 0; j < x.shape[1]; j++) {
@@ -69,15 +69,16 @@ int main() {
 
     Tensor y2 = lin2.forward(y);
 
+    std::cout << "x: " << x << '\n';
     std::cout << "lin.weights: " << lin.weights << '\n';
-    std::cout << "lin2.weights: " << lin.weights << '\n';
+    std::cout << "lin2.weights: " << lin2.weights << '\n';
     std::cout << "y: " << y << '\n';
     std::cout << "y2: " << y2 << '\n';
 
     y2.backward();
 
-    std::cout << "lin.weights.grad: " << (lin.weights.grad ? "exists" : "null") << '\n';
-    std::cout << "lin2.weights.grad: " << (lin2.weights.grad ? "exists" : "null") << '\n';
+    std::cout << "lin.weights.grad: " << *lin.weights.grad << '\n';
+    std::cout << "lin2.weights.grad: " << *lin2.weights.grad << '\n';
 
     return 0;
 }

@@ -56,3 +56,13 @@ struct MatmulBackward : public GradNode {
 
     void backward(Tensor &grad_output) override;
 };
+
+struct LinearBackward : public GradNode {
+    // Store pointers to input and weights (not transposed weights)
+    Tensor *input_ptr;
+    Tensor *weights_ptr;
+
+    LinearBackward(Tensor *input, Tensor *weights);
+
+    void backward(Tensor &grad_output) override;
+};

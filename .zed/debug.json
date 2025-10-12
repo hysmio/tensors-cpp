@@ -1,0 +1,21 @@
+// Project-local debug tasks
+//
+// For more documentation on how to configure debug tasks,
+// see: https://zed.dev/docs/debugger
+[
+  {
+    "adapter": "CodeLLDB",
+    "label": "make (CodeLLDB)",
+    "request": "launch",
+    "name": "make (CodeLLDB)",
+    "build": {
+      "command": "make"
+    },
+    "program": "llm-cpp",
+    "env": {
+      "ENV": "Zed"
+    },
+    "stopOnEntry": false,
+    "cwd": "/Users/hayden/projects/llm-cpp"
+  }
+]

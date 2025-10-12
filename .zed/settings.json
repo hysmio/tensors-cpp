@@ -1,0 +1,45 @@
+{
+  "format_on_save": "on",
+  "code_actions_on_format": [
+    "source.fixAll.clang-tidy"
+  ],
+  "formatter": {
+    "language_server": {
+      "name": "clangd"
+    }
+  },
+  "lsp": {
+    "clangd": {
+      "binary": {
+        "path": "clangd",
+        "arguments": [
+          "--background-index",
+          "--clang-tidy",
+          "--completion-style=detailed",
+          "--function-arg-placeholders",
+          "--header-insertion=iwyu",
+          "--clang-tidy-checks=*"
+        ]
+      }
+    }
+  },
+  "tasks": {
+    "format-and-tidy": {
+      "label": "Format and Tidy",
+      "command": "make",
+      "args": ["format", "&&", "make", "tidy-fix"],
+      "use_new_terminal": false,
+      "allow_concurrent_runs": false,
+      "reveal": "never"
+    }
+  },
+  "file_types": {
+    "C++": {
+      "format_on_save": "on",
+      "code_actions_on_format": [
+        "source.fixAll.clang-tidy",
+        "source.organizeImports"
+      ]
+    }
+  }
+}

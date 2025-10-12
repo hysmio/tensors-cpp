@@ -1,0 +1,15 @@
+# CMake files
+CMakeFiles/
+CMakeCache.txt
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+*.pdb
+*.dSYM
+
+# Binary
+llm-cpp

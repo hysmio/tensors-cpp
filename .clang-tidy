@@ -1,0 +1,35 @@
+---
+# clang-tidy configuration for modern C++ (C++23)
+Checks: >
+  -abseil-*,
+  -altera-*,
+  -android-*,
+  -fuchsia-*,
+  -google-*,
+  -llvm-*,
+  -llvmlibc-*,
+  -zircon-*,
+  -readability-else-after-return,
+  -readability-static-accessed-through-instance,
+  -readability-avoid-const-params-in-decls,
+  -cppcoreguidelines-non-private-member-variables-in-classes,
+  -misc-non-private-member-variables-in-classes,
+  -modernize-return-braced-init-list,
+  -modernize-use-trailing-return-type,
+  -modernize-avoid-c-arrays,
+  -cppcoreguidelines-avoid-c-arrays,
+  -hicpp-avoid-c-arrays,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -hicpp-no-array-decay,
+  -readability-magic-numbers,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cert-err58-cpp,
+  -misc-include-cleaner,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -bugprone-easily-swappable-parameters,
+  -boost-use-range,
+  -misc-definitions-in-headers,
+  -readability-identifier-length
+
+WarningsAsErrors: ''

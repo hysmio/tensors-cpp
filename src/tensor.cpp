@@ -5,29 +5,32 @@
 
 #include "linalg.hpp"
 
-Tensor::Tensor(const Tensor &other) : allocated(true), shape(other.shape), requires_grad(other.requires_grad), grad_fn(nullptr), grad(nullptr) {
-    uint32_t const size =
-        std::accumulate(shape.begin(), shape.end(), uint32_t(1), std::multiplies<>());
+Tensor::Tensor(const Tensor &other)
+    : allocated(true), shape(other.shape), requires_grad(other.requires_grad),
+      grad_fn(other.grad_fn), grad(other.grad ? other.grad : nullptr) {
+    uint32_t size = std::accumulate(shape.begin(), shape.end(), uint32_t(1), std::multiplies<>());
 
     this->size = size;
     this->data = new float[size];
     std::copy(other.data, other.data + size, this->data);
 }
 
-Tensor::Tensor(std::vector<uint32_t> shape, bool requires_grad) : allocated(true), size(0), shape(std::move(shape)), data(nullptr), requires_grad(requires_grad), grad_fn(nullptr), grad(nullptr) {
+Tensor::Tensor(std::vector<uint32_t> shape, bool requires_grad)
+    : allocated(true), size(0), shape(std::move(shape)), data(nullptr),
+      requires_grad(requires_grad), grad_fn(nullptr), grad(nullptr) {
 
-    uint32_t const size =
+    uint32_t size =
         std::accumulate(this->shape.begin(), this->shape.end(), uint32_t(1), std::multiplies<>());
 
     this->size = size;
     this->data = new float[size];
 }
 
-Tensor::Tensor(const std::vector<uint32_t> &shape, float *data)
-    : allocated(false), shape(shape), data(data), requires_grad(false), grad_fn(nullptr), grad(nullptr) {
+Tensor::Tensor(std::vector<uint32_t> &shape, float *data)
+    : allocated(false), shape(shape), data(data), requires_grad(false), grad_fn(nullptr),
+      grad(nullptr) {
 
-    uint32_t const size =
-        std::accumulate(shape.begin(), shape.end(), uint32_t(1), std::multiplies<>());
+    uint32_t size = std::accumulate(shape.begin(), shape.end(), uint32_t(1), std::multiplies<>());
 
     this->size = size;
 }
@@ -41,13 +44,9 @@ Tensor::~Tensor() {
     }
 }
 
-void Tensor::zero() {
-    std::fill(this->data, this->data + this->size, 0.0f);
-}
+void Tensor::zero() { std::fill(this->data, this->data + this->size, 0.0f); }
 
-void Tensor::ones() {
-    std::fill(this->data, this->data + this->size, 1.0f);
-}
+void Tensor::ones() { std::fill(this->data, this->data + this->size, 1.0f); }
 
 void Tensor::random() {
     std::random_device rd;
@@ -67,7 +66,7 @@ void Tensor::dealloc() {
     }
 }
 
-// const Tensor Tensor::operator[](uint32_t index) {
+//  Tensor Tensor::operator[](uint32_t index) {
 //     assert(index < this->shape[0]);
 
 //     uint32_t size = std::accumulate(this->shape.begin() + 1,
@@ -76,14 +75,23 @@ void Tensor::dealloc() {
 //     size); return result;
 // }
 
+Tensor Tensor::operator[](uint32_t index) {
+    assert(!this->shape.empty());
+    assert(index < this->shape[0]);
+
+    uint32_t size = std::accumulate(this->shape.begin() + 1, this->shape.end(), uint32_t(1),
+                                    std::multiplies<>());
+    Tensor result({this->shape.begin() + 1, this->shape.end()}, this->data + size_t(index * size));
+    return result;
+}
+
 Tensor Tensor::operator[](uint32_t index) const {
     assert(!this->shape.empty());
     assert(index < this->shape[0]);
 
-    uint32_t const size = std::accumulate(this->shape.begin() + 1, this->shape.end(), uint32_t(1),
-                                          std::multiplies<>());
-    Tensor const result({this->shape.begin() + 1, this->shape.end()},
-                        this->data + size_t(index * size));
+    uint32_t size = std::accumulate(this->shape.begin() + 1, this->shape.end(), uint32_t(1),
+                                    std::multiplies<>());
+    Tensor result({this->shape.begin() + 1, this->shape.end()}, this->data + size_t(index * size));
     return result;
 }
 
@@ -101,104 +109,100 @@ Tensor Tensor::operator[](uint32_t index) const {
 //     return stream;
 // }
 
-Tensor Tensor::operator+(const Tensor &other) const {
+Tensor Tensor::operator+(Tensor &other) {
     Tensor result(this->shape, this->requires_grad || other.requires_grad);
     for (uint32_t i = 0; i < this->size; ++i) {
         result.data[i] = this->data[i] + other.data[i];
     }
-    
+
     // Set up gradient function if needed
     if (this->requires_grad || other.requires_grad) {
-        result.grad_fn = std::make_shared<AddBackward>(
-            this->shape, other.shape, this->requires_grad, other.requires_grad
-        );
     }
-    
+
     return result;
 }
 
-Tensor& Tensor::operator+=(const Tensor &other) {
+Tensor &Tensor::operator+=(Tensor &other) {
     for (uint32_t i = 0; i < this->size; ++i) {
         this->data[i] += other.data[i];
     }
     return *this;
 }
 
-Tensor Tensor::operator*(const Tensor &other) const {
+Tensor Tensor::operator*(Tensor &other) {
     if (this->shape.size() == 2 && other.shape.size() == 2) {
-        return this->matmul(other);
+        return matmul(*this, other);
     }
 
     Tensor result(this->shape, this->requires_grad || other.requires_grad);
     for (uint32_t i = 0; i < this->size; ++i) {
         result.data[i] = this->data[i] * other.data[i];
     }
-    
+
     // Set up gradient function if needed
     if (this->requires_grad || other.requires_grad) {
-        result.grad_fn = std::make_shared<MulBackward>(*this, other);
+        result.grad_fn = std::make_shared<MulBackward>(this, &other);
     }
-    
+
     return result;
 }
 
-Tensor Tensor::operator/(const Tensor &other) const {
+Tensor Tensor::operator/(Tensor &other) {
     assert(this->shape == other.shape);
 
-    const Tensor result(this->shape, this->requires_grad || other.requires_grad);
+    Tensor result(this->shape, this->requires_grad || other.requires_grad);
     for (uint32_t i = 0; i < this->size; ++i) {
         result.data[i] = this->data[i] / other.data[i];
     }
     return result;
 }
 
-Tensor Tensor::matmul(const Tensor &other) const {
-    assert(this->shape.size() == 2);
-    assert(other.shape.size() == 2);
-    assert(this->shape[1] == other.shape[0]);
+Tensor matmul(Tensor &a, Tensor &b) {
+    assert(a.shape.size() == 2);
+    assert(b.shape.size() == 2);
+    assert(a.shape[1] == b.shape[0]);
 
-    Tensor result({this->shape[0], other.shape[1]}, this->requires_grad || other.requires_grad);
+    Tensor result({a.shape[0], b.shape[1]}, a.requires_grad || b.requires_grad);
 
-    sgemm(this->shape[0], this->shape[1], other.shape[1], 1.0F, this->data, other.data, 0.0F,
-          result.data);
-    
+    sgemm(a.shape[0], a.shape[1], b.shape[1], 1.0F, a.data, b.data, 0.0F, result.data);
+
     // Set up gradient function if needed
-    if (this->requires_grad || other.requires_grad) {
-        result.grad_fn = std::make_shared<MatmulBackward>(*this, other);
+    if (a.requires_grad || b.requires_grad) {
+        result.grad_fn = std::make_shared<MatmulBackward>(&a, &b);
     }
-    
+
     return result;
 }
 
 // Autograd utility methods
-Tensor Tensor::transpose() const {
+Tensor Tensor::transpose() {
     assert(this->shape.size() == 2);
     Tensor result({this->shape[1], this->shape[0]}, this->requires_grad);
-    
+
     for (uint32_t i = 0; i < this->shape[0]; i++) {
         for (uint32_t j = 0; j < this->shape[1]; j++) {
             result.data[j * this->shape[0] + i] = this->data[i * this->shape[1] + j];
         }
     }
-    
+
     return result;
 }
 
-Tensor Tensor::sum_to_shape(const std::vector<uint32_t>& target_shape) const {
+Tensor Tensor::sum_to_shape(std::vector<uint32_t> &target_shape) {
     // For now, implement simple case where shapes are identical or can be summed directly
     if (this->shape == target_shape) {
         return Tensor(*this);
     }
-    
+
     // Simple broadcasting: if target is smaller, sum over extra dimensions
     if (target_shape.size() < this->shape.size()) {
         // For now, just handle the case where we need to sum the first dimension
-        if (target_shape.size() == 1 && this->shape.size() == 2 && 
+        if (target_shape.size() == 1 && this->shape.size() == 2 &&
             target_shape[0] == this->shape[1]) {
-            
+
             Tensor result(target_shape, this->requires_grad);
             result.zero();
-            
+
             for (uint32_t i = 0; i < this->shape[0]; i++) {
                 for (uint32_t j = 0; j < this->shape[1]; j++) {
                     result.data[j] += this->data[i * this->shape[1] + j];
@@ -207,24 +211,22 @@ Tensor Tensor::sum_to_shape(const std::vector<uint32_t>& target_shape) const {
             return result;
         }
     }
-    
+
     // If shapes don't match and we can't handle the case, just return a copy
     // In a full implementation, this would handle all broadcasting rules
     return Tensor(*this);
 }
 
-bool Tensor::is_leaf() const {
-    return this->grad_fn == nullptr;
-}
+bool Tensor::is_leaf() { return this->grad_fn == nullptr; }
 
 void Tensor::backward() {
     // Create ones tensor with same shape as gradient starter
-    Tensor ones(this->shape, false);
-    ones.ones();
-    this->backward(ones);
+    this->grad = new Tensor(this->shape, false); // For scalar tensors, grad is just ones
+    this->grad->ones();
+    this->backward(*this->grad);
 }
 
-void Tensor::backward(const Tensor& grad_output) {
+void Tensor::backward(Tensor &grad_output) {
     // If this is a leaf tensor that requires gradients, accumulate the gradient
     if (this->requires_grad && this->is_leaf()) {
         if (!this->grad) {
@@ -233,15 +235,9 @@ void Tensor::backward(const Tensor& grad_output) {
         }
         *this->grad += grad_output;
     }
-    
-    // If this tensor has a gradient function, compute gradients for inputs
+
+    // If this tensor has a gradient function, apply gradients to input tensors
     if (this->grad_fn) {
-        auto input_grads = this->grad_fn->backward(grad_output);
-        // For now, we'll just store the input gradients to demonstrate they're computed
-        // In a full implementation, we'd need to track input tensors to call backward on them
-        std::cout << "Computed " << input_grads.size() << " input gradients" << std::endl;
-        for (size_t i = 0; i < input_grads.size(); i++) {
-            std::cout << "Input grad " << i << " size: " << input_grads[i].size << std::endl;
-        }
+        this->grad_fn->backward(grad_output);
     }
 }

@@ -1,9 +1,9 @@
-#include "./module.hpp"
 #include "../tensor.hpp"
+#include "./module.hpp"
 
 class Linear : public Module {
 
-public:
+  public:
     uint32_t in_features = 0;
     uint32_t out_features = 0;
     Tensor weights;

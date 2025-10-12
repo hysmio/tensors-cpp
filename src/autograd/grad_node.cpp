@@ -2,93 +2,53 @@
 #include "../tensor.hpp"
 
 // AddBackward implementation
-std::vector<Tensor> AddBackward::backward(const Tensor& grad_output) {
-    std::vector<Tensor> grads;
-
+void AddBackward::backward(Tensor &grad_output) {
     if (lhs_needs_grad) {
-        // For addition, gradient flows through unchanged, but may need shape adjustment
-        Tensor lhs_grad = grad_output.sum_to_shape(lhs_shape);
-        grads.push_back(lhs_grad);
+        lhs_ptr->grad = new Tensor(lhs_ptr->shape, false);
+        lhs_ptr->grad->zero();
     }
-
     if (rhs_needs_grad) {
-        Tensor rhs_grad = grad_output.sum_to_shape(rhs_shape);
-        grads.push_back(rhs_grad);
+        rhs_ptr->grad = new Tensor(rhs_ptr->shape, false);
+        rhs_ptr->grad->zero();
     }
-
-    return grads;
 }
 
 // MulBackward implementation
-MulBackward::MulBackward(const Tensor& lhs, const Tensor& rhs)
-    : lhs_shape(lhs.shape), rhs_shape(rhs.shape),
-      lhs_needs_grad(lhs.requires_grad), rhs_needs_grad(rhs.requires_grad) {
+MulBackward::MulBackward(Tensor *lhs, Tensor *rhs) : lhs_ptr(lhs), rhs_ptr(rhs) {}
 
-    if (rhs_needs_grad) {
-        lhs_data.resize(lhs.size);
-        std::copy(lhs.data, lhs.data + lhs.size, lhs_data.begin());
+void MulBackward::backward(Tensor &grad_output) {
+    if (lhs_ptr && lhs_ptr->requires_grad) {
+        lhs_ptr->grad = new Tensor(lhs_ptr->shape, false);
+        lhs_ptr->grad->zero();
+        auto grad = grad_output * (*rhs_ptr);
+        *(lhs_ptr->grad) += grad;
+        if (lhs_ptr->grad_fn) {
+            lhs_ptr->grad_fn->backward(grad_output);
+        }
     }
 
-    if (lhs_needs_grad) {
-        rhs_data.resize(rhs.size);
-        std::copy(rhs.data, rhs.data + rhs.size, rhs_data.begin());
+    if (rhs_ptr && rhs_ptr->requires_grad) {
+        rhs_ptr->grad = new Tensor(rhs_ptr->shape, false);
+        rhs_ptr->grad->zero();
+        auto grad = grad_output * (*lhs_ptr);
+        *(rhs_ptr->grad) += grad;
+        if (rhs_ptr->grad_fn) {
+            rhs_ptr->grad_fn->backward(grad_output);
+        }
     }
-}
-
-std::vector<Tensor> MulBackward::backward(const Tensor& grad_output) {
-    std::vector<Tensor> grads;
-
-    if (lhs_needs_grad) {
-        // d/dlhs = grad_output * rhs
-        Tensor rhs_tensor(rhs_shape, const_cast<float*>(&rhs_data[0]));
-        Tensor lhs_grad = grad_output * rhs_tensor;
-        grads.push_back(lhs_grad.sum_to_shape(lhs_shape));
-    }
-
-    if (rhs_needs_grad) {
-        // d/drhs = grad_output * lhs
-        Tensor lhs_tensor(lhs_shape, const_cast<float*>(&lhs_data[0]));
-        Tensor rhs_grad = grad_output * lhs_tensor;
-        grads.push_back(rhs_grad.sum_to_shape(rhs_shape));
-    }
-
-    return grads;
 }
 
 // MatmulBackward implementation
-MatmulBackward::MatmulBackward(const Tensor& lhs, const Tensor& rhs)
-    : lhs_shape(lhs.shape), rhs_shape(rhs.shape),
-      lhs_needs_grad(lhs.requires_grad), rhs_needs_grad(rhs.requires_grad) {
+MatmulBackward::MatmulBackward(Tensor *lhs, Tensor *rhs) : lhs_ptr(lhs), rhs_ptr(rhs) {}
 
-    if (rhs_needs_grad) {
-        lhs_data.resize(lhs.size);
-        std::copy(lhs.data, lhs.data + lhs.size, lhs_data.begin());
+void MatmulBackward::backward(Tensor &grad_output) {
+    if (lhs_ptr && lhs_ptr->requires_grad) {
+        Tensor lhs_grad(lhs_ptr->shape, false);
+        lhs_grad.zero();
     }
 
-    if (lhs_needs_grad) {
-        rhs_data.resize(rhs.size);
-        std::copy(rhs.data, rhs.data + rhs.size, rhs_data.begin());
+    if (rhs_ptr && rhs_ptr->requires_grad) {
+        Tensor rhs_grad(rhs_ptr->shape, false);
+        rhs_grad.zero();
     }
-}
-
-std::vector<Tensor> MatmulBackward::backward(const Tensor& grad_output) {
-    std::vector<Tensor> grads;
-
-    if (lhs_needs_grad) {
-        // d/dlhs = grad_output @ rhs^T
-        Tensor rhs_tensor(rhs_shape, const_cast<float*>(&rhs_data[0]));
-        Tensor rhs_transposed = rhs_tensor.transpose();
-        Tensor lhs_grad = grad_output.matmul(rhs_transposed);
-        grads.push_back(lhs_grad);
-    }
-
-    if (rhs_needs_grad) {
-        // d/drhs = lhs^T @ grad_output
-        Tensor lhs_tensor(lhs_shape, const_cast<float*>(&lhs_data[0]));
-        Tensor lhs_transposed = lhs_tensor.transpose();
-        Tensor rhs_grad = lhs_transposed.matmul(grad_output);
-        grads.push_back(rhs_grad);
-    }
-
-    return grads;
 }

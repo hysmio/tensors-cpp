@@ -2,6 +2,7 @@
 build/
 build-*/
 cmake-build-*/
+.cache
 
 # Compiled binaries and artifacts
 *.o
@@ -27,3 +28,6 @@ llm-cpp
 *~
 *.tmp
 output.txt
+
+# Local pytorch comparison folder
+pytorch

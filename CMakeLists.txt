@@ -18,7 +18,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 set(CMAKE_CXX_FLAGS "-Wall -Wextra")
-set(CMAKE_CXX_FLAGS_DEBUG "-fsanitize=address -g -O0 -I src -DDEBUG")
+set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -I src -DDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 
 find_package(PkgConfig REQUIRED)

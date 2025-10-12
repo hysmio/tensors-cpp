@@ -1,15 +1,29 @@
-# CMake files
-CMakeFiles/
-CMakeCache.txt
+# Build directories
+build/
+build-*/
+cmake-build-*/
 
-# Build artifacts
+# Compiled binaries and artifacts
 *.o
+*.obj
 *.a
 *.so
 *.dylib
 *.exe
 *.pdb
 *.dSYM
-
-# Binary
 llm-cpp
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Temporary files
+*~
+*.tmp
+output.txt

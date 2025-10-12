@@ -12,7 +12,7 @@ Linear::~Linear() {
 Tensor Linear::forward(Tensor x) {
     if (x.shape.size() == 2)
         assert(x.shape[1] == this->in_features);
-    Tensor y = x * this->weights;
+    Tensor y = x * this->weights.transpose();
     if (this->biases) {
         y += this->biases.value();
     }

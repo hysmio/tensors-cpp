@@ -9,9 +9,9 @@
     "request": "launch",
     "name": "make (CodeLLDB)",
     "build": {
-      "command": "make"
+      "command": "make debug"
     },
-    "program": "llm-cpp",
+    "program": "./build/bin/llm-cpp",
     "env": {
       "ENV": "Zed"
     },

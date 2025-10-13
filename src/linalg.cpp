@@ -59,11 +59,8 @@ Tensor *cos(Tensor *in) {
 }
 
 Tensor *mse(Tensor *y, Tensor *y_pred) {
-    Tensor *error = new Tensor({1}, true);
-    for (uint32_t i = 0; i < y->size; i++) {
-        error += y - y_pred;
-        *error += (*error * error);
-    }
+    Tensor *error = *y - y_pred;
+    *error += (*error * error->transpose());
 
     return error;
 }

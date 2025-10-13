@@ -3,13 +3,37 @@
 
 // AddBackward implementation
 void AddBackward::backward(Tensor *grad_output) {
-    if (lhs_needs_grad) {
+    if (lhs_ptr->requires_grad) {
         lhs_ptr->grad = new Tensor(lhs_ptr->shape, false);
         lhs_ptr->grad->zero();
+        if (lhs_ptr->grad_fn) {
+            lhs_ptr->grad_fn->backward(grad_output);
+        }
     }
-    if (rhs_needs_grad) {
+    if (rhs_ptr->requires_grad) {
         rhs_ptr->grad = new Tensor(rhs_ptr->shape, false);
         rhs_ptr->grad->zero();
+        if (rhs_ptr->grad_fn) {
+            rhs_ptr->grad_fn->backward(grad_output);
+        }
+    }
+}
+
+// SubBackward implementation
+void SubBackward::backward(Tensor *grad_output) {
+    if (lhs_ptr->requires_grad) {
+        lhs_ptr->grad = new Tensor(lhs_ptr->shape, false);
+        lhs_ptr->grad->zero();
+        if (lhs_ptr->grad_fn) {
+            lhs_ptr->grad_fn->backward(grad_output);
+        }
+    }
+    if (rhs_ptr->requires_grad) {
+        rhs_ptr->grad = new Tensor(rhs_ptr->shape, false);
+        rhs_ptr->grad->zero();
+        if (rhs_ptr->grad_fn) {
+            rhs_ptr->grad_fn->backward(grad_output);
+        }
     }
 }
 

@@ -19,7 +19,7 @@ class Tensor {
     std::shared_ptr<GradNode> grad_fn;
     Tensor *grad;
 
-    static Tensor* linspace(float start, float end, uint32_t num_points);
+    static Tensor *linspace(float start, float end, uint32_t num_points);
 
     Tensor(const Tensor &other);
     Tensor(std::vector<uint32_t> shape, float *data);
@@ -32,18 +32,19 @@ class Tensor {
 
     void dealloc();
 
-    Tensor* operator+(Tensor *other);
-    Tensor* operator+=(Tensor *other);
-    Tensor* operator*(Tensor *other);
-    Tensor* operator*(float other);
-    Tensor* operator/(Tensor *other);
+    Tensor *operator+(Tensor *other);
+    Tensor *operator+=(Tensor *other);
+    Tensor *operator-(Tensor *other);
+    Tensor *operator*(Tensor *other);
+    Tensor *operator*(float other);
+    Tensor *operator/(Tensor *other);
     // std::ostream& operator<<(std::ostream &stream);
-    Tensor* operator[](uint32_t index);
-    Tensor* operator[](uint32_t index) const;
+    Tensor *operator[](uint32_t index);
+    Tensor *operator[](uint32_t index) const;
 
     // Autograd utilities
-    Tensor* transpose();
-    Tensor* sum_to_shape(std::vector<uint32_t> &target_shape);
+    Tensor *transpose();
+    Tensor *sum_to_shape(std::vector<uint32_t> &target_shape);
 
     // Autograd methods
     void backward(Tensor *grad_output);
@@ -51,4 +52,4 @@ class Tensor {
     bool is_leaf();  // True if tensor was created by user (not by operation)
 };
 
-Tensor* matmul(Tensor *a, Tensor *b);
+Tensor *matmul(Tensor *a, Tensor *b);

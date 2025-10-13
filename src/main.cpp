@@ -41,10 +41,10 @@ static std::ostream &operator<<(std::ostream &stream, const Tensor &tensor) {
 }
 
 int main() {
-    auto a = Tensor::linspace(0.0f, 10.0f, 100);
-    std::cout << *a << '\n';
-    auto b = *((*sin(a)) * cos(a)) * 2.0f;
-    std::cout << *b << '\n';
+    // auto a = Tensor::linspace(0.0f, 10.0f, 100);
+    // std::cout << *a << '\n';
+    // auto b = *((*sin(a)) * cos(a)) * 2.0f;
+    // std::cout << *b << '\n';
     // std::cout << "b.shape: " << b.shape << '\n';
 
     Tensor *x = new Tensor({100, 2}, true);
@@ -53,9 +53,19 @@ int main() {
     Linear lin(2, 2, false);
     Linear lin2(2, 2, false);
 
+    auto start = std::chrono::high_resolution_clock::now();
     Tensor *y = lin.forward(x);
+    auto end = std::chrono::high_resolution_clock::now();
+    std::cout << "Forward pass time: "
+              << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()
+              << " microseconds\n";
 
+    start = std::chrono::high_resolution_clock::now();
     Tensor *y2 = lin2.forward(y);
+    end = std::chrono::high_resolution_clock::now();
+    std::cout << "Forward pass time: "
+              << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()
+              << " microseconds\n";
 
     // std::cout << "x: " << x << '\n';
     std::cout << "lin.weights: " << lin.weights << '\n';
@@ -64,7 +74,14 @@ int main() {
     std::cout << "y2: " << *y2 << '\n';
 
     Tensor *loss = mse(y2, y);
+    std::cout << "loss: " << *loss << '\n';
+
+    start = std::chrono::high_resolution_clock::now();
     loss->backward();
+    end = std::chrono::high_resolution_clock::now();
+    std::cout << "Backward pass time: "
+              << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()
+              << " microseconds\n";
 
     std::cout << "lin.weights.grad: " << *lin.weights.grad << '\n';
     std::cout << "lin2.weights.grad: " << *lin2.weights.grad << '\n';

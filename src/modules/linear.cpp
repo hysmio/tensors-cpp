@@ -1,6 +1,6 @@
 #include "./linear.hpp"
-#include "../tensor.hpp"
 #include "../autograd/grad_node.hpp"
+#include "../tensor.hpp"
 
 Linear::Linear(uint32_t in_features, uint32_t out_features, bool bias)
     : in_features(in_features), out_features(out_features),
@@ -14,32 +14,24 @@ Linear::~Linear() {
     // this->weights.free();
 }
 
-Tensor* Linear::forward(Tensor *x) {
+Tensor *Linear::forward(Tensor *x) {
     if (x->shape.size() == 2)
         assert(x->shape[1] == this->in_features);
 
-    // Create result tensor
     std::vector<uint32_t> result_shape = {x->shape[0], this->out_features};
     Tensor *y = new Tensor(result_shape, x->requires_grad || this->weights.requires_grad);
 
-    // Perform the computation: x @ weights.T
-    for (uint32_t i = 0; i < x->shape[0]; i++) {
-        for (uint32_t j = 0; j < this->out_features; j++) {
-            float sum = 0.0f;
-            for (uint32_t k = 0; k < this->in_features; k++) {
-                sum += x->data[i * x->shape[1] + k] * this->weights.data[j * this->weights.shape[1] + k];
-            }
-            y->data[i * result_shape[1] + j] = sum;
-        }
-    }
+    // x @ weights.T
+    y = matmul(x, this->weights.transpose());
 
     // Set up gradient function with original tensors
     if (x->requires_grad || this->weights.requires_grad) {
         y->grad_fn = std::make_shared<LinearBackward>(x, &this->weights);
     }
 
+    // TODO: cbf dealing with this atm, not necessary for what I'm trying to do
     // if (this->biases) {
-    //     (*y) += this->biases.;
+    //     (*y) += this->biases.value();
     // }
     return y;
 }

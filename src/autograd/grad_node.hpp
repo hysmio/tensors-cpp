@@ -12,7 +12,7 @@ struct GradNode {
     virtual ~GradNode() = default;
 
     // Compute gradients w.r.t. inputs given gradient w.r.t. output
-    virtual void backward(Tensor &grad_output) = 0;
+    virtual void backward(Tensor *grad_output) = 0;
 
     // Edge information for connecting gradients to the right inputs
     struct Edge {
@@ -34,7 +34,7 @@ struct AddBackward : public GradNode {
         : lhs_shape(lhs_shape), rhs_shape(rhs_shape), lhs_needs_grad(lhs_needs_grad),
           rhs_needs_grad(rhs_needs_grad), lhs_ptr(lhs_ptr), rhs_ptr(rhs_ptr) {}
 
-    void backward(Tensor &grad_output) override;
+    void backward(Tensor *grad_output) override;
 };
 
 struct MulBackward : public GradNode {
@@ -44,7 +44,7 @@ struct MulBackward : public GradNode {
 
     MulBackward(Tensor *lhs, Tensor *rhs);
 
-    void backward(Tensor &grad_output) override;
+    void backward(Tensor *grad_output) override;
 };
 
 struct MatmulBackward : public GradNode {
@@ -54,7 +54,7 @@ struct MatmulBackward : public GradNode {
 
     MatmulBackward(Tensor *lhs, Tensor *rhs);
 
-    void backward(Tensor &grad_output) override;
+    void backward(Tensor *grad_output) override;
 };
 
 struct LinearBackward : public GradNode {
@@ -64,5 +64,5 @@ struct LinearBackward : public GradNode {
 
     LinearBackward(Tensor *input, Tensor *weights);
 
-    void backward(Tensor &grad_output) override;
+    void backward(Tensor *grad_output) override;
 };

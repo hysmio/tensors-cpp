@@ -10,5 +10,5 @@ class Linear : public Module {
     std::optional<Tensor> biases = std::nullopt;
     Linear(uint32_t in_features, uint32_t out_features, bool bias = true);
     ~Linear();
-    virtual Tensor forward(Tensor &x) override;
+    virtual Tensor* forward(Tensor *x) override;
 };

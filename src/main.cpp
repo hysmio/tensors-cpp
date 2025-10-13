@@ -1,6 +1,6 @@
+#include "linalg.hpp"
 #include "modules/linear.hpp"
 #include "tensor.hpp"
-#include "linalg.hpp"
 
 static std::ostream &printTensor(std::ostream &stream, const Tensor &tensor,
                                  const std::string &prefix = "") {
@@ -51,11 +51,11 @@ int main() {
     x->random();
 
     Linear lin(2, 2, false);
-    Linear lin2(2, 1, false);
+    Linear lin2(2, 2, false);
 
-    Tensor* y = lin.forward(x);
+    Tensor *y = lin.forward(x);
 
-    Tensor* y2 = lin2.forward(y);
+    Tensor *y2 = lin2.forward(y);
 
     // std::cout << "x: " << x << '\n';
     std::cout << "lin.weights: " << lin.weights << '\n';
@@ -63,7 +63,8 @@ int main() {
     std::cout << "y: " << *y << '\n';
     std::cout << "y2: " << *y2 << '\n';
 
-    y2->backward();
+    Tensor *loss = mse(y2, y);
+    loss->backward();
 
     std::cout << "lin.weights.grad: " << *lin.weights.grad << '\n';
     std::cout << "lin2.weights.grad: " << *lin2.weights.grad << '\n';

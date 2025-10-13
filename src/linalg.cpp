@@ -2,10 +2,12 @@
 
 #include "pch.hpp"
 #include "tensor.hpp"
+#include <math.h>
 
 // #define CEIL_DIV (x, y) (1 + ((x - 1) / y))
 
-void sgemm(uint32_t m, uint32_t n, uint32_t k, float alpha, float *a, float *b, float beta, float *c) {
+void sgemm(uint32_t m, uint32_t n, uint32_t k, float alpha, float *a, float *b, float beta,
+           float *c) {
     /// a = float[m * n] = float[4, 6]
     /// b = float[n * k] = float[6, 5]
     /// c = float[m * k] = float[4, 5]
@@ -40,7 +42,7 @@ void sgemm(uint32_t m, uint32_t n, uint32_t k, float alpha, float *a, float *b, 
     }
 }
 
-Tensor* sin(Tensor *in) {
+Tensor *sin(Tensor *in) {
     Tensor *out = new Tensor(in->shape, in->requires_grad);
     for (uint32_t i = 0; i < in->size; i++) {
         out->data[i] = std::sin(in->data[i]);
@@ -48,10 +50,20 @@ Tensor* sin(Tensor *in) {
     return out;
 }
 
-Tensor* cos(Tensor *in) {
+Tensor *cos(Tensor *in) {
     Tensor *out = new Tensor(in->shape, in->requires_grad);
     for (uint32_t i = 0; i < in->size; i++) {
         out->data[i] = std::cos(in->data[i]);
     }
     return out;
+}
+
+Tensor *mse(Tensor *y, Tensor *y_pred) {
+    Tensor *error = new Tensor({1}, true);
+    for (uint32_t i = 0; i < y->size; i++) {
+        error += y - y_pred;
+        *error += (*error * error);
+    }
+
+    return error;
 }

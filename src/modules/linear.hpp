@@ -1,14 +1,16 @@
 #include "../tensor.hpp"
 #include "./module.hpp"
+#include <memory>
 
 class Linear : public Module {
 
   public:
     uint32_t in_features = 0;
     uint32_t out_features = 0;
-    Tensor weights;
-    std::optional<Tensor> biases = std::nullopt;
+    std::shared_ptr<Tensor> weights;
+    std::optional<std::shared_ptr<Tensor>> biases = std::nullopt;
     Linear(uint32_t in_features, uint32_t out_features, bool bias = true);
     ~Linear();
-    virtual Tensor* forward(Tensor *x) override;
+    virtual Tensor forward(Tensor &x) override;
+    virtual std::map<std::string, std::shared_ptr<Tensor>> parameters() override;
 };

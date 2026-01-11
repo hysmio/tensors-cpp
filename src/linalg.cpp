@@ -2,6 +2,7 @@
 
 #include "pch.hpp"
 #include "tensor.hpp"
+#include "autograd/grad_node.hpp"
 #include <math.h>
 
 // #define CEIL_DIV (x, y) (1 + ((x - 1) / y))
@@ -42,25 +43,51 @@ void sgemm(uint32_t m, uint32_t n, uint32_t k, float alpha, float *a, float *b, 
     }
 }
 
-Tensor *sin(Tensor *in) {
-    Tensor *out = new Tensor(in->shape, in->requires_grad);
-    for (uint32_t i = 0; i < in->size; i++) {
-        out->data[i] = std::sin(in->data[i]);
+Tensor sin(Tensor &in) {
+    Tensor out(in.shape, in.requires_grad);
+    for (uint32_t i = 0; i < in.size; i++) {
+        out.data()[i] = std::sin(in.data()[i]);
     }
     return out;
 }
 
-Tensor *cos(Tensor *in) {
-    Tensor *out = new Tensor(in->shape, in->requires_grad);
-    for (uint32_t i = 0; i < in->size; i++) {
-        out->data[i] = std::cos(in->data[i]);
+Tensor cos(Tensor &in) {
+    Tensor out(in.shape, in.requires_grad);
+    for (uint32_t i = 0; i < in.size; i++) {
+        out.data()[i] = std::cos(in.data()[i]);
     }
     return out;
 }
 
-Tensor *mse(Tensor *y, Tensor *y_pred) {
-    Tensor *error = *y - y_pred;
-    *error += (*error * error->transpose());
+Tensor relu(Tensor &in) {
+    constexpr float leak = 0.01f;  // LeakyReLU
+    Tensor out(in.shape, in.requires_grad);
+    for (uint32_t i = 0; i < in.size; i++) {
+        out.data()[i] = in.data()[i] > 0 ? in.data()[i] : leak * in.data()[i];
+    }
+    if (in.requires_grad) {
+        out.grad_fn = std::make_shared<ReluBackward>(std::make_shared<Tensor>(in));
+    }
+    return out;
+}
 
-    return error;
+Tensor tanh(Tensor &in) {
+    Tensor out(in.shape, in.requires_grad);
+    for (uint32_t i = 0; i < in.size; i++) {
+        out.data()[i] = std::tanh(in.data()[i]);
+    }
+    if (in.requires_grad) {
+        out.grad_fn = std::make_shared<TanhBackward>(
+            std::make_shared<Tensor>(in),
+            std::make_shared<Tensor>(out)  // Store output for backward
+        );
+    }
+    return out;
+}
+
+// (1/n) * sum(y - y_pred)^2
+Tensor mse(Tensor &y, Tensor &y_pred) {
+    Tensor error = y_pred - y;
+    Tensor squared = error * error;
+    return squared.mean();
 }

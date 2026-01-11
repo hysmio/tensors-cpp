@@ -12,7 +12,7 @@ struct GradNode {
     virtual ~GradNode() = default;
 
     // Compute gradients w.r.t. inputs given gradient w.r.t. output
-    virtual void backward(Tensor *grad_output) = 0;
+    virtual void backward(Tensor &grad_output) = 0;
 
     // Edge information for connecting gradients to the right inputs
     struct Edge {
@@ -24,50 +24,83 @@ struct GradNode {
 
 // Specific gradient functions for different operations
 struct AddBackward : public GradNode {
-    Tensor *lhs_ptr;
-    Tensor *rhs_ptr;
+    std::shared_ptr<Tensor> lhs_ptr;
+    std::shared_ptr<Tensor> rhs_ptr;
 
-    AddBackward(Tensor *lhs_ptr, Tensor *rhs_ptr) : lhs_ptr(lhs_ptr), rhs_ptr(rhs_ptr) {}
+    AddBackward(std::shared_ptr<Tensor> lhs_ptr, std::shared_ptr<Tensor> rhs_ptr)
+        : lhs_ptr(lhs_ptr), rhs_ptr(rhs_ptr) {}
 
-    void backward(Tensor *grad_output) override;
+    void backward(Tensor &grad_output) override;
 };
 
 // Specific gradient functions for different operations
 struct SubBackward : public GradNode {
-    Tensor *lhs_ptr;
-    Tensor *rhs_ptr;
+    std::shared_ptr<Tensor> lhs_ptr;
+    std::shared_ptr<Tensor> rhs_ptr;
 
-    SubBackward(Tensor *lhs_ptr, Tensor *rhs_ptr) : lhs_ptr(lhs_ptr), rhs_ptr(rhs_ptr) {}
+    SubBackward(std::shared_ptr<Tensor> lhs_ptr, std::shared_ptr<Tensor> rhs_ptr)
+        : lhs_ptr(lhs_ptr), rhs_ptr(rhs_ptr) {}
 
-    void backward(Tensor *grad_output) override;
+    void backward(Tensor &grad_output) override;
 };
 
 struct MulBackward : public GradNode {
-    // Store pointers to original tensors for gradient accumulation
-    Tensor *lhs_ptr;
-    Tensor *rhs_ptr;
+    std::shared_ptr<Tensor> lhs_ptr;
+    std::shared_ptr<Tensor> rhs_ptr;
 
-    MulBackward(Tensor *lhs, Tensor *rhs);
+    MulBackward(std::shared_ptr<Tensor> lhs, std::shared_ptr<Tensor> rhs);
 
-    void backward(Tensor *grad_output) override;
+    void backward(Tensor &grad_output) override;
 };
 
 struct MatmulBackward : public GradNode {
-    // Store pointers to original leaf tensors only
-    Tensor *lhs_ptr;
-    Tensor *rhs_ptr;
+    std::shared_ptr<Tensor> lhs_ptr;
+    std::shared_ptr<Tensor> rhs_ptr;
 
-    MatmulBackward(Tensor *lhs, Tensor *rhs);
+    MatmulBackward(std::shared_ptr<Tensor> lhs, std::shared_ptr<Tensor> rhs);
 
-    void backward(Tensor *grad_output) override;
+    void backward(Tensor &grad_output) override;
 };
 
 struct LinearBackward : public GradNode {
-    // Store pointers to input and weights (not transposed weights)
-    Tensor *input_ptr;
-    Tensor *weights_ptr;
+    std::shared_ptr<Tensor> input_ptr;
+    std::shared_ptr<Tensor> weights_ptr;
 
-    LinearBackward(Tensor *input, Tensor *weights);
+    LinearBackward(std::shared_ptr<Tensor> input, std::shared_ptr<Tensor> weights);
 
-    void backward(Tensor *grad_output) override;
+    void backward(Tensor &grad_output) override;
+};
+
+struct SumBackward : public GradNode {
+    std::shared_ptr<Tensor> input_ptr;
+
+    SumBackward(std::shared_ptr<Tensor> input);
+
+    void backward(Tensor &grad_output) override;
+};
+
+struct DivScalarBackward : public GradNode {
+    std::shared_ptr<Tensor> input_ptr;
+    float scalar;
+
+    DivScalarBackward(std::shared_ptr<Tensor> input, float scalar);
+
+    void backward(Tensor &grad_output) override;
+};
+
+struct ReluBackward : public GradNode {
+    std::shared_ptr<Tensor> input_ptr;
+
+    ReluBackward(std::shared_ptr<Tensor> input);
+
+    void backward(Tensor &grad_output) override;
+};
+
+struct TanhBackward : public GradNode {
+    std::shared_ptr<Tensor> input_ptr;
+    std::shared_ptr<Tensor> output_ptr;
+
+    TanhBackward(std::shared_ptr<Tensor> input, std::shared_ptr<Tensor> output);
+
+    void backward(Tensor &grad_output) override;
 };

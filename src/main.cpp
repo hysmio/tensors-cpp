@@ -1,14 +1,18 @@
 #include "linalg.hpp"
 #include "modules/linear.hpp"
+#include "optimizer/sgd.hpp"
 #include "tensor.hpp"
+#include <cmath>
 
-static std::ostream &printTensor(std::ostream &stream, const Tensor &tensor,
-                                 const std::string &prefix = "") {
+using namespace std;
+using namespace chrono;
+
+static ostream &printTensor(ostream &stream, const Tensor &tensor, const string &prefix = "") {
     stream << prefix << "[";
     if (tensor.shape.size() == 1) {
         uint32_t const len = tensor.shape[0];
         for (uint32_t i = 0; i < len; i++) {
-            stream << tensor.data[i];
+            stream << tensor.data()[i];
             if (i < len - 1) {
                 stream << ", ";
             }
@@ -20,7 +24,7 @@ static std::ostream &printTensor(std::ostream &stream, const Tensor &tensor,
     }
     for (uint32_t i = 0; i < tensor.shape[0]; i++) {
         stream << '\n';
-        printTensor(stream, *tensor[i], prefix + "  ");
+        printTensor(stream, tensor[i], prefix + "  ");
         if (i < tensor.shape[0] - 1) {
             stream << ", ";
         } else {
@@ -31,60 +35,65 @@ static std::ostream &printTensor(std::ostream &stream, const Tensor &tensor,
     return stream;
 }
 
-static std::ostream &operator<<(std::ostream &stream, const Tensor &tensor) {
-
+static ostream &operator<<(ostream &stream, const Tensor &tensor) {
     stream << "Tensor(";
     printTensor(stream, tensor);
     stream << ")";
-
     return stream;
 }
 
 int main() {
-    // auto a = Tensor::linspace(0.0f, 10.0f, 100);
-    // std::cout << *a << '\n';
-    // auto b = *((*sin(a)) * cos(a)) * 2.0f;
-    // std::cout << *b << '\n';
-    // std::cout << "b.shape: " << b.shape << '\n';
+    const int size = 100;
+    const float PI = 3.14159265358979f;
 
-    Tensor *x = new Tensor({100, 2}, true);
-    x->random();
+    Tensor x = Tensor::linspace(-1, 1, 100);
+    x.shape.push_back(1);
+    Tensor y({size, 1}, false);
 
-    Linear lin(2, 2, false);
-    Linear lin2(2, 2, false);
+    for (int i = 0; i < size; i++) {
+        y.data()[i] = std::sin(x.data()[i]);
+    }
 
-    auto start = std::chrono::high_resolution_clock::now();
-    Tensor *y = lin.forward(x);
-    auto end = std::chrono::high_resolution_clock::now();
-    std::cout << "Forward pass time: "
-              << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()
-              << " microseconds\n";
+    Linear lin(1, 32, false);
+    Linear lin2(32, 1, false);
 
-    start = std::chrono::high_resolution_clock::now();
-    Tensor *y2 = lin2.forward(y);
-    end = std::chrono::high_resolution_clock::now();
-    std::cout << "Forward pass time: "
-              << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()
-              << " microseconds\n";
+    SGD optimizer(0.01, 5.f);
 
-    // std::cout << "x: " << x << '\n';
-    std::cout << "lin.weights: " << lin.weights << '\n';
-    std::cout << "lin2.weights: " << lin2.weights << '\n';
-    std::cout << "y: " << *y << '\n';
-    std::cout << "y2: " << *y2 << '\n';
+    const int n_iterations = 750000;
+    const int print_every = 10000;
 
-    Tensor *loss = mse(y2, y);
-    std::cout << "loss: " << *loss << '\n';
+    for (int i = 0; i < n_iterations; i++) {
+        optimizer.zero_grad(lin);
+        optimizer.zero_grad(lin2);
 
-    start = std::chrono::high_resolution_clock::now();
-    loss->backward();
-    end = std::chrono::high_resolution_clock::now();
-    std::cout << "Backward pass time: "
-              << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()
-              << " microseconds\n";
+        Tensor h = lin.forward(x);
+        h = tanh(h);
+        Tensor y_hat = lin2.forward(h);
 
-    std::cout << "lin.weights.grad: " << *lin.weights.grad << '\n';
-    std::cout << "lin2.weights.grad: " << *lin2.weights.grad << '\n';
+        Tensor loss = mse(y_hat, y);
+        loss.backward();
+
+        if (i % print_every == 0 || i == n_iterations - 1) {
+            cout << "Iteration " << i << ": loss = " << loss.data()[0] << '\n';
+        }
+
+        optimizer.step(lin);
+        optimizer.step(lin2);
+    }
+
+    cout << "Training completed!" << '\n';
+
+    // Print sample predictions
+    Tensor h = lin.forward(x);
+    h = tanh(h);
+    Tensor y_pred = lin2.forward(h);
+
+    cout << "\nSample predictions:\n";
+    cout << "x\t\tsin(x)\t\tpredicted\n";
+    cout << "----------------------------------------\n";
+    for (int i : {0, 25, 50, 75, 99}) {
+        cout << x.data()[i] << "\t\t" << y.data()[i] << "\t\t" << y_pred.data()[i] << '\n';
+    }
 
     return 0;
 }

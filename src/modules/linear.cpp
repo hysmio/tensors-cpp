@@ -2,10 +2,14 @@
 #include "../autograd/grad_node.hpp"
 #include "../tensor.hpp"
 
-Linear::Linear(uint32_t in_features, uint32_t out_features, bool bias)
+Linear::Linear(uint32_t in_features, uint32_t out_features, bool bias, Device device)
     : in_features(in_features), out_features(out_features),
-      weights(std::make_shared<Tensor>(std::vector<uint32_t>{out_features, in_features}, true)),
-      biases(bias ? std::make_optional(std::make_shared<Tensor>(std::vector<uint32_t>{1, out_features}, true)) : std::nullopt) {
+      weights(
+          std::make_shared<Tensor>(std::vector<uint32_t>{out_features, in_features}, true, device)),
+      biases(bias ? std::make_optional(std::make_shared<Tensor>(
+                        std::vector<uint32_t>{1, out_features}, true, device))
+                  : std::nullopt),
+      device(device) {
     assert(in_features > 0 && out_features > 0);
     this->weights->xavier_uniform(in_features, out_features);
     if (this->biases) {
@@ -27,8 +31,7 @@ Tensor Linear::forward(Tensor &x) {
 
     // Set up gradient function with original tensors
     if (x.requires_grad || this->weights->requires_grad) {
-        y.grad_fn = std::make_shared<LinearBackward>(
-            std::make_shared<Tensor>(x), this->weights);
+        y.grad_fn = std::make_shared<LinearBackward>(std::make_shared<Tensor>(x), this->weights);
     }
 
     // TODO: cbf dealing with this atm, not necessary for what I'm trying to do

@@ -2,12 +2,24 @@
 #include "modules/linear.hpp"
 #include "optimizer/sgd.hpp"
 #include "tensor.hpp"
+#include <chrono>
 #include <cmath>
 
 using namespace std;
 using namespace chrono;
 
 static ostream &printTensor(ostream &stream, const Tensor &tensor, const string &prefix = "") {
+    if (tensor.device == Device::CUDA) {
+        stream << prefix << "Tensor(shape=";
+        for (uint32_t i = 0; i < tensor.shape.size(); i++) {
+            stream << tensor.shape[i];
+            if (i < tensor.shape.size() - 1) {
+                stream << ", ";
+            }
+        }
+        stream << ", device=CUDA)";
+        return stream;
+    }
     stream << prefix << "[";
     if (tensor.shape.size() == 1) {
         uint32_t const len = tensor.shape[0];
@@ -46,16 +58,25 @@ int main() {
     const int size = 100;
     const float PI = 3.14159265358979f;
 
-    Tensor x = Tensor::linspace(-1, 1, 100);
+    std::cout << "Starting" << std::endl;
+    Tensor x = Tensor::linspace(-1, 1, 100, Device::CPU);
+    std::cout << "Created linspace tensor: " << x << std::endl;
     x.shape.push_back(1);
     Tensor y({size, 1}, false);
+
+    std::cout << "Created y " << y << std::endl;
 
     for (int i = 0; i < size; i++) {
         y.data()[i] = std::sin(x.data()[i]);
     }
 
-    Linear lin(1, 32, false);
-    Linear lin2(32, 1, false);
+    Device device = Device::CUDA;
+
+    x.to(device);
+    y.to(device);
+
+    Linear lin(1, 32, false, device);
+    Linear lin2(32, 1, false, device);
 
     SGD optimizer(0.01, 5.f);
 

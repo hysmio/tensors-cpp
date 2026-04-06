@@ -1,5 +1,6 @@
 #pragma once
 
+#include "device.hpp"
 #include "pch.hpp"
 #include "tensor_data.hpp"
 #include <memory>
@@ -17,6 +18,7 @@ class Tensor {
     std::vector<uint32_t> shape;
     std::vector<uint32_t> strides;
     bool requires_grad;
+    Device device;
 
     // Autograd support
     std::shared_ptr<GradNode> grad_fn;
@@ -24,22 +26,23 @@ class Tensor {
     std::shared_ptr<std::shared_ptr<Tensor>> grad;
 
     // Factory methods
-    static Tensor linspace(float start, float end, uint32_t num_points);
-    static Tensor zeros(std::vector<uint32_t> shape, bool requires_grad = false);
+    static Tensor linspace(float start, float end, uint32_t num_points,
+                           Device device = Device::CPU);
+    static Tensor zeros(std::vector<uint32_t> shape, bool requires_grad = false,
+                        Device device = Device::CPU);
     static Tensor ones_like(const Tensor &other);
 
     // Constructors
-    Tensor(std::vector<uint32_t> shape, bool requires_grad = false);
-    Tensor(const Tensor &other);                    // Deep copy
-    Tensor(Tensor &&other) noexcept = default;      // Move constructor
-    Tensor &operator=(const Tensor &other);         // Copy assignment
+    Tensor(std::vector<uint32_t> shape, bool requires_grad = false, Device device = Device::CPU);
+    Tensor(const Tensor &other);                          // Deep copy
+    Tensor(Tensor &&other) noexcept = default;            // Move constructor
+    Tensor &operator=(const Tensor &other);               // Copy assignment
     Tensor &operator=(Tensor &&other) noexcept = default; // Move assignment
-    ~Tensor() = default;                            // shared_ptr handles cleanup
+    ~Tensor() = default;                                  // shared_ptr handles cleanup
 
     // view of tensor data
-    Tensor(std::shared_ptr<TensorData> storage, size_t offset,
-           std::vector<uint32_t> shape, std::vector<uint32_t> strides,
-           bool requires_grad = false);
+    Tensor(std::shared_ptr<TensorData> storage, size_t offset, std::vector<uint32_t> shape,
+           std::vector<uint32_t> strides, bool requires_grad, Device device);
 
     float *data();
     const float *data() const;
@@ -69,6 +72,9 @@ class Tensor {
     Tensor operator/(float other);
     Tensor operator[](uint32_t index);
     Tensor operator[](uint32_t index) const;
+
+    /** Move tensor to a different device */
+    Tensor to(Device device);
 
     Tensor matmul(Tensor &other);
 

@@ -11,11 +11,11 @@
     "build": {
       "command": "make debug"
     },
-    "program": "./build/bin/llm-cpp",
+    "program": "build/bin/llm-cpp",
     "env": {
       "ENV": "Zed"
     },
     "stopOnEntry": false,
-    "cwd": "/Users/hayden/projects/llm-cpp"
+    "cwd": "/home/hayden/projects/hysmio/tensors-cpp"
   }
 ]

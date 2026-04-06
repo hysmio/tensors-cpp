@@ -1,4 +1,41 @@
 #include "tensor_data.hpp"
+#include <cuda_runtime.h>
+TensorData::TensorData(size_t size, Device device) : device(device), size(size) {
+
+    if (device == Device::CPU) {
+        data = new float[size];
+    } else {
+        cudaMalloc(&data, size * sizeof(float));
+    }
+}
+
+TensorData::TensorData(std::vector<float> d, Device device) : device(device), size(d.size()) {
+    if (device == Device::CPU) {
+        data = new float[d.size()];
+        std::copy(d.begin(), d.end(), data);
+    } else {
+        cudaMalloc(&data, d.size() * sizeof(float));
+        cudaMemcpy(data, d.data(), size * sizeof(float), cudaMemcpyHostToDevice);
+    }
+}
+
+TensorData::TensorData(const float *ptr, size_t size, Device device) : device(device), size(size) {
+    if (device == Device::CPU) {
+        data = new float[size];
+        std::copy(ptr, ptr + size, data);
+    } else {
+        cudaMalloc(&data, size * sizeof(float));
+        cudaMemcpy(data, ptr, size * sizeof(float), cudaMemcpyHostToDevice);
+    }
+}
+
+TensorData::~TensorData() {
+    if (device == Device::CPU) {
+        delete[] data;
+    } else {
+        cudaFree(data);
+    }
+}
 
 uint32_t compute_size(const std::vector<uint32_t> &shape) {
     uint32_t size = 1;
@@ -23,7 +60,7 @@ std::vector<uint32_t> compute_strides(const std::vector<uint32_t> &shape) {
 }
 
 size_t compute_linear_index(const std::vector<uint32_t> &indices,
-                                   const std::vector<uint32_t> &strides, size_t offset) {
+                            const std::vector<uint32_t> &strides, size_t offset) {
     size_t idx = offset;
     for (size_t i = 0; i < indices.size(); ++i) {
         idx += indices[i] * strides[i];

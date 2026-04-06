@@ -1,9 +1,11 @@
 #pragma once
 
+#include "autograd/grad_node.hpp"
 #include "pch.hpp"
 #include "tensor.hpp"
-#include "autograd/grad_node.hpp"
 #include <math.h>
+
+#include "backend/cuda/cuda_backend.cuh"
 
 // #define CEIL_DIV (x, y) (1 + ((x - 1) / y))
 
@@ -60,7 +62,7 @@ Tensor cos(Tensor &in) {
 }
 
 Tensor relu(Tensor &in) {
-    constexpr float leak = 0.01f;  // LeakyReLU
+    constexpr float leak = 0.01f; // LeakyReLU
     Tensor out(in.shape, in.requires_grad);
     for (uint32_t i = 0; i < in.size; i++) {
         out.data()[i] = in.data()[i] > 0 ? in.data()[i] : leak * in.data()[i];
@@ -72,14 +74,21 @@ Tensor relu(Tensor &in) {
 }
 
 Tensor tanh(Tensor &in) {
-    Tensor out(in.shape, in.requires_grad);
-    for (uint32_t i = 0; i < in.size; i++) {
-        out.data()[i] = std::tanh(in.data()[i]);
+    Tensor out(in.shape, in.requires_grad, in.device);
+    switch (in.device) {
+    case Device::CPU:
+        for (uint32_t i = 0; i < in.size; i++) {
+            out.data()[i] = std::tanh(in.data()[i]);
+        }
+        break;
+    case Device::CUDA:
+        launch_tanh(out.data(), in.size);
+        break;
     }
     if (in.requires_grad) {
         out.grad_fn = std::make_shared<TanhBackward>(
             std::make_shared<Tensor>(in),
-            std::make_shared<Tensor>(out)  // Store output for backward
+            std::make_shared<Tensor>(out) // Store output for backward
         );
     }
     return out;
@@ -87,7 +96,16 @@ Tensor tanh(Tensor &in) {
 
 // (1/n) * sum(y - y_pred)^2
 Tensor mse(Tensor &y, Tensor &y_pred) {
-    Tensor error = y_pred - y;
-    Tensor squared = error * error;
-    return squared.mean();
+    switch (y.device) {
+    case Device::CPU: {
+        Tensor error = y_pred - y;
+        Tensor squared = error * error;
+        return squared.mean();
+    }
+    case Device::CUDA: {
+        Tensor out(y.shape, y.requires_grad, y.device);
+        launch_square_error(y_pred.data(), y.data(), out.data(), y.size);
+        return out.mean();
+    }
+    }
 }

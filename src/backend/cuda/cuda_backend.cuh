@@ -8,14 +8,35 @@ __host__ void launch_cuda_sgemm(uint32_t m, uint32_t n, uint32_t k, float alpha,
 __global__ void cuda_sgemm(uint32_t m, uint32_t n, uint32_t k, float alpha, float *a, float *b,
                            float beta, float *c);
 
-__global__ void scalar_divide(float *a, float scalar, uint32_t size);
-__host__ void launch_scalar_divide(float *a, float scalar, uint32_t size);
+__global__ void dot(const float *a, const float *b, float *out, uint32_t size);
+__host__ void launch_dot(const float *a, const float *b, float *out, uint32_t size);
 
-__global__ void scalar_multiply(float *a, float scalar, uint32_t size);
-__host__ void launch_scalar_multiply(float *a, float scalar, uint32_t size);
+__global__ void scalar_divide(const float *a, float scalar, float *out, uint32_t size);
+__host__ void launch_scalar_divide(const float *a, float scalar, float *out, uint32_t size);
 
-__global__ void vec_divide(float *a, float *b, uint32_t size);
-__host__ void launch_vec_divide(float *a, float *b, uint32_t size);
+__global__ void scalar_multiply(const float *a, const float scalar, float *out, uint32_t size);
+__host__ void launch_scalar_multiply(const float *a, const float scalar, float *out, uint32_t size);
+
+__global__ void scalar_add(const float *a, const float scalar, float *out, uint32_t size);
+__host__ void launch_scalar_add(const float *a, const float scalar, float *out, uint32_t size);
+
+__global__ void scalar_addp(const float *a, const float *scalar, float *out, uint32_t size);
+__host__ void launch_scalar_addp(const float *a, const float *scalar, float *out, uint32_t size);
+
+__global__ void scalar_subtract(const float *a, const float scalar, float *out, uint32_t size);
+__host__ void launch_scalar_subtract(const float *a, const float scalar, float *out, uint32_t size);
+
+__global__ void vec_divide(const float *a, const float *b, float *out, uint32_t size);
+__host__ void launch_vec_divide(const float *a, const float *b, float *out, uint32_t size);
+
+__global__ void vec_subtract(const float *a, const float *b, float *out, uint32_t size);
+__host__ void launch_vec_subtract(const float *a, const float *b, float *out, uint32_t size);
+
+__global__ void vec_multiply(const float *a, const float *b, float *out, uint32_t size);
+__host__ void launch_vec_multiply(const float *a, const float *b, float *out, uint32_t size);
+
+__global__ void vec_add(const float *a, const float *b, float *out, uint32_t size);
+__host__ void launch_vec_add(const float *a, const float *b, float *out, uint32_t size);
 
 __global__ void linspace(float *a, float start, float end, uint32_t size);
 __host__ void launch_linspace(float *a, float start, float end, uint32_t size);

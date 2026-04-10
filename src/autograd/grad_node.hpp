@@ -53,6 +53,15 @@ struct MulBackward : public GradNode {
     void backward(Tensor &grad_output) override;
 };
 
+struct DivBackward : public GradNode {
+    std::shared_ptr<Tensor> lhs_ptr;
+    std::shared_ptr<Tensor> rhs_ptr;
+
+    DivBackward(std::shared_ptr<Tensor> lhs, std::shared_ptr<Tensor> rhs);
+
+    void backward(Tensor &grad_output) override;
+};
+
 struct MatmulBackward : public GradNode {
     std::shared_ptr<Tensor> lhs_ptr;
     std::shared_ptr<Tensor> rhs_ptr;

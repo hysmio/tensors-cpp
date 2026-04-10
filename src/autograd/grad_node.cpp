@@ -1,11 +1,12 @@
 #include "grad_node.hpp"
+#include "../backend/cuda/cuda_backend.cuh"
 #include "../tensor.hpp"
 
 // AddBackward implementation
 void AddBackward::backward(Tensor &grad_output) {
     if (lhs_ptr->requires_grad) {
         if (!*lhs_ptr->grad) {
-            *lhs_ptr->grad = std::make_shared<Tensor>(lhs_ptr->shape, false);
+            *lhs_ptr->grad = std::make_shared<Tensor>(lhs_ptr->shape, false, lhs_ptr->device);
             (*lhs_ptr->grad)->zero();
         }
         **lhs_ptr->grad += grad_output;
@@ -15,7 +16,7 @@ void AddBackward::backward(Tensor &grad_output) {
     }
     if (rhs_ptr->requires_grad) {
         if (!*rhs_ptr->grad) {
-            *rhs_ptr->grad = std::make_shared<Tensor>(rhs_ptr->shape, false);
+            *rhs_ptr->grad = std::make_shared<Tensor>(rhs_ptr->shape, false, rhs_ptr->device);
             (*rhs_ptr->grad)->zero();
         }
         **rhs_ptr->grad += grad_output;
@@ -29,7 +30,7 @@ void AddBackward::backward(Tensor &grad_output) {
 void SubBackward::backward(Tensor &grad_output) {
     if (lhs_ptr->requires_grad) {
         if (!*lhs_ptr->grad) {
-            *lhs_ptr->grad = std::make_shared<Tensor>(lhs_ptr->shape, false);
+            *lhs_ptr->grad = std::make_shared<Tensor>(lhs_ptr->shape, false, lhs_ptr->device);
             (*lhs_ptr->grad)->zero();
         }
         **lhs_ptr->grad += grad_output;
@@ -39,12 +40,21 @@ void SubBackward::backward(Tensor &grad_output) {
     }
     if (rhs_ptr->requires_grad) {
         if (!*rhs_ptr->grad) {
-            *rhs_ptr->grad = std::make_shared<Tensor>(rhs_ptr->shape, false);
+            *rhs_ptr->grad = std::make_shared<Tensor>(rhs_ptr->shape, false, rhs_ptr->device);
             (*rhs_ptr->grad)->zero();
         }
-        // Negate gradient for rhs: d(a-b)/db = -1, accumulate the negated value
-        for (uint32_t i = 0; i < rhs_ptr->size; i++) {
-            (*rhs_ptr->grad)->data()[i] -= grad_output.data()[i];
+
+        switch (rhs_ptr->device) {
+        case Device::CPU:
+            // Negate gradient for rhs: d(a-b)/db = -1, accumulate the negated value
+            for (uint32_t i = 0; i < rhs_ptr->size; i++) {
+                (*rhs_ptr->grad)->data()[i] -= grad_output.data()[i];
+            }
+            break;
+        case Device::CUDA:
+            launch_vec_subtract((*rhs_ptr->grad)->data(), grad_output.data(),
+                                (*rhs_ptr->grad)->data(), rhs_ptr->size);
+            break;
         }
         if (rhs_ptr->grad_fn) {
             rhs_ptr->grad_fn->backward(**rhs_ptr->grad);
@@ -59,7 +69,7 @@ MulBackward::MulBackward(std::shared_ptr<Tensor> lhs, std::shared_ptr<Tensor> rh
 void MulBackward::backward(Tensor &grad_output) {
     if (lhs_ptr->requires_grad) {
         if (!*lhs_ptr->grad) {
-            *lhs_ptr->grad = std::make_shared<Tensor>(lhs_ptr->shape, false);
+            *lhs_ptr->grad = std::make_shared<Tensor>(lhs_ptr->shape, false, lhs_ptr->device);
             (*lhs_ptr->grad)->zero();
         }
         auto grad = grad_output * (*rhs_ptr);
@@ -71,7 +81,36 @@ void MulBackward::backward(Tensor &grad_output) {
 
     if (rhs_ptr->requires_grad) {
         if (!*rhs_ptr->grad) {
-            *rhs_ptr->grad = std::make_shared<Tensor>(rhs_ptr->shape, false);
+            *rhs_ptr->grad = std::make_shared<Tensor>(rhs_ptr->shape, false, rhs_ptr->device);
+            (*rhs_ptr->grad)->zero();
+        }
+        auto grad = grad_output * (*lhs_ptr);
+        **rhs_ptr->grad += grad;
+        if (rhs_ptr->grad_fn) {
+            rhs_ptr->grad_fn->backward(**rhs_ptr->grad);
+        }
+    }
+}
+
+DivBackward::DivBackward(std::shared_ptr<Tensor> lhs, std::shared_ptr<Tensor> rhs)
+    : lhs_ptr(lhs), rhs_ptr(rhs) {}
+
+void DivBackward::backward(Tensor &grad_output) {
+    if (lhs_ptr->requires_grad) {
+        if (!*lhs_ptr->grad) {
+            *lhs_ptr->grad = std::make_shared<Tensor>(lhs_ptr->shape, false, lhs_ptr->device);
+            (*lhs_ptr->grad)->zero();
+        }
+        auto grad = grad_output * (*rhs_ptr);
+        **lhs_ptr->grad += grad;
+        if (lhs_ptr->grad_fn) {
+            lhs_ptr->grad_fn->backward(**lhs_ptr->grad);
+        }
+    }
+
+    if (rhs_ptr->requires_grad) {
+        if (!*rhs_ptr->grad) {
+            *rhs_ptr->grad = std::make_shared<Tensor>(rhs_ptr->shape, false, rhs_ptr->device);
             (*rhs_ptr->grad)->zero();
         }
         auto grad = grad_output * (*lhs_ptr);
@@ -89,7 +128,7 @@ MatmulBackward::MatmulBackward(std::shared_ptr<Tensor> lhs, std::shared_ptr<Tens
 void MatmulBackward::backward(Tensor &grad_output) {
     if (lhs_ptr->requires_grad) {
         if (!*lhs_ptr->grad) {
-            *lhs_ptr->grad = std::make_shared<Tensor>(lhs_ptr->shape, false);
+            *lhs_ptr->grad = std::make_shared<Tensor>(lhs_ptr->shape, false, lhs_ptr->device);
             (*lhs_ptr->grad)->zero();
         }
         auto rhs_transposed = rhs_ptr->transpose();
@@ -102,7 +141,7 @@ void MatmulBackward::backward(Tensor &grad_output) {
 
     if (rhs_ptr->requires_grad) {
         if (!*rhs_ptr->grad) {
-            *rhs_ptr->grad = std::make_shared<Tensor>(rhs_ptr->shape, false);
+            *rhs_ptr->grad = std::make_shared<Tensor>(rhs_ptr->shape, false, rhs_ptr->device);
             (*rhs_ptr->grad)->zero();
         }
         auto lhs_transposed = lhs_ptr->transpose();
@@ -122,7 +161,7 @@ void LinearBackward::backward(Tensor &grad_output) {
     // Gradient w.r.t. input: grad_output @ weights
     if (input_ptr->requires_grad) {
         if (!*input_ptr->grad) {
-            *input_ptr->grad = std::make_shared<Tensor>(input_ptr->shape, false);
+            *input_ptr->grad = std::make_shared<Tensor>(input_ptr->shape, false, input_ptr->device);
             (*input_ptr->grad)->zero();
         }
         auto grad = matmul(grad_output, *weights_ptr);
@@ -135,7 +174,8 @@ void LinearBackward::backward(Tensor &grad_output) {
     // Gradient w.r.t. weights: grad_output.T @ input
     if (weights_ptr->requires_grad) {
         if (!*weights_ptr->grad) {
-            *weights_ptr->grad = std::make_shared<Tensor>(weights_ptr->shape, false);
+            *weights_ptr->grad =
+                std::make_shared<Tensor>(weights_ptr->shape, false, weights_ptr->device);
             (*weights_ptr->grad)->zero();
         }
         auto grad_transposed = grad_output.transpose();
@@ -153,12 +193,21 @@ SumBackward::SumBackward(std::shared_ptr<Tensor> input) : input_ptr(input) {}
 void SumBackward::backward(Tensor &grad_output) {
     if (input_ptr->requires_grad) {
         if (!*input_ptr->grad) {
-            *input_ptr->grad = std::make_shared<Tensor>(input_ptr->shape, false);
+            *input_ptr->grad = std::make_shared<Tensor>(input_ptr->shape, false, input_ptr->device);
             (*input_ptr->grad)->zero();
         }
-        float grad_val = grad_output.data()[0];
-        for (uint32_t i = 0; i < input_ptr->size; i++) {
-            (*input_ptr->grad)->data()[i] += grad_val;
+        switch (input_ptr->device) {
+        case Device::CPU: {
+            float grad_val = grad_output.data()[0];
+            for (uint32_t i = 0; i < input_ptr->size; i++) {
+                (*input_ptr->grad)->data()[i] += grad_val;
+            }
+            break;
+        }
+        case Device::CUDA:
+            launch_scalar_addp((*input_ptr->grad)->data(), grad_output.data(),
+                               (*input_ptr->grad)->data(), input_ptr->size);
+            break;
         }
         if (input_ptr->grad_fn) {
             input_ptr->grad_fn->backward(**input_ptr->grad);
@@ -173,12 +222,16 @@ DivScalarBackward::DivScalarBackward(std::shared_ptr<Tensor> input, float scalar
 void DivScalarBackward::backward(Tensor &grad_output) {
     if (input_ptr->requires_grad) {
         if (!*input_ptr->grad) {
-            *input_ptr->grad = std::make_shared<Tensor>(input_ptr->shape, false);
+            *input_ptr->grad = std::make_shared<Tensor>(input_ptr->shape, false, input_ptr->device);
             (*input_ptr->grad)->zero();
         }
+
+        Tensor grad_output_scaled = grad_output / scalar;
+
         for (uint32_t i = 0; i < input_ptr->size; i++) {
-            (*input_ptr->grad)->data()[i] += grad_output.data()[i] / scalar;
+            (**input_ptr->grad) += grad_output_scaled;
         }
+
         if (input_ptr->grad_fn) {
             input_ptr->grad_fn->backward(**input_ptr->grad);
         }
@@ -191,7 +244,7 @@ void ReluBackward::backward(Tensor &grad_output) {
     constexpr float leak = 0.01f;
     if (input_ptr->requires_grad) {
         if (!*input_ptr->grad) {
-            *input_ptr->grad = std::make_shared<Tensor>(input_ptr->shape, false);
+            *input_ptr->grad = std::make_shared<Tensor>(input_ptr->shape, false, input_ptr->device);
             (*input_ptr->grad)->zero();
         }
         for (uint32_t i = 0; i < input_ptr->size; i++) {
@@ -212,14 +265,15 @@ TanhBackward::TanhBackward(std::shared_ptr<Tensor> input, std::shared_ptr<Tensor
 void TanhBackward::backward(Tensor &grad_output) {
     if (input_ptr->requires_grad) {
         if (!*input_ptr->grad) {
-            *input_ptr->grad = std::make_shared<Tensor>(input_ptr->shape, false);
+            *input_ptr->grad = std::make_shared<Tensor>(input_ptr->shape, false, input_ptr->device);
             (*input_ptr->grad)->zero();
         }
-        for (uint32_t i = 0; i < input_ptr->size; i++) {
-            float tanh_val = output_ptr->data()[i];
-            float grad_mult = 1.0f - tanh_val * tanh_val;
-            (*input_ptr->grad)->data()[i] += grad_output.data()[i] * grad_mult;
-        }
+
+        auto squared = *output_ptr * *output_ptr;
+        auto one_minus_squared = -squared + 1.0f;
+        auto grad_mult = grad_output * one_minus_squared;
+        *(*input_ptr->grad) += grad_mult;
+
         if (input_ptr->grad_fn) {
             input_ptr->grad_fn->backward(**input_ptr->grad);
         }

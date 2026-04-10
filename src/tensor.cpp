@@ -35,7 +35,7 @@ Tensor Tensor::zeros(std::vector<uint32_t> shape, bool requires_grad, Device dev
 }
 
 Tensor Tensor::ones_like(const Tensor &other) {
-    Tensor result(other.shape, false);
+    Tensor result(other.shape, false, other.device);
     result.ones();
     return result;
 }
@@ -131,6 +131,19 @@ Tensor::Tensor(std::shared_ptr<TensorData> storage, size_t offset, std::vector<u
       shape(std::move(shape)), strides(std::move(strides)), requires_grad(requires_grad),
       grad_fn(nullptr), grad(std::make_shared<std::shared_ptr<Tensor>>(nullptr)), device(device) {}
 
+void Tensor::zero_grad() {
+    if (*grad) {
+        switch (device) {
+        case Device::CPU:
+            std::fill_n((*grad)->data(), (*grad)->size, 0.0f);
+            break;
+        case Device::CUDA:
+            cudaMemset((*grad)->data(), 0, (*grad)->size * sizeof(float));
+            break;
+        }
+    }
+}
+
 // Data access
 float *Tensor::data() { return storage->ptr() + offset; }
 
@@ -160,7 +173,16 @@ void Tensor::zero() {
     }
 }
 
-void Tensor::ones() { std::fill(this->data(), this->data() + this->size, 1.0f); }
+void Tensor::ones() {
+    switch (this->device) {
+    case Device::CPU:
+        std::fill(this->data(), this->data() + this->size, 1.0f);
+        break;
+    case Device::CUDA:
+        cudaMemset(this->data(), 1.0f, this->size * sizeof(float));
+        break;
+    }
+}
 
 void Tensor::random() {
     std::random_device rd;
@@ -197,6 +219,7 @@ void Tensor::xavier_uniform(uint32_t fan_in, uint32_t fan_out) {
 
 // Indexing - returns a view that shares storage
 Tensor Tensor::operator[](uint32_t index) {
+    assert(this->device != Device::CUDA);
     assert(!this->shape.empty());
     assert(index < this->shape[0]);
 
@@ -212,6 +235,7 @@ Tensor Tensor::operator[](uint32_t index) {
 }
 
 Tensor Tensor::operator[](uint32_t index) const {
+    assert(this->device != Device::CUDA);
     assert(!this->shape.empty());
     assert(index < this->shape[0]);
 
@@ -225,10 +249,33 @@ Tensor Tensor::operator[](uint32_t index) const {
                   this->device);
 }
 
+Tensor Tensor::operator-() const {
+    Tensor result(this->shape, this->requires_grad, this->device);
+    switch (this->device) {
+    case Device::CPU:
+        for (uint32_t i = 0; i < this->size; ++i) {
+            result.data()[i] = -this->data()[i];
+        }
+        break;
+    case Device::CUDA:
+        launch_vec_subtract(result.data(), this->data(), result.data(), this->size);
+        break;
+    }
+    return result;
+}
+
 Tensor Tensor::operator+(Tensor &other) {
-    Tensor result(this->shape, this->requires_grad || other.requires_grad);
-    for (uint32_t i = 0; i < this->size; ++i) {
-        result.data()[i] = this->data()[i] + other.data()[i];
+    Tensor result(this->shape, this->requires_grad || other.requires_grad, this->device);
+
+    switch (this->device) {
+    case Device::CPU:
+        for (uint32_t i = 0; i < this->size; ++i) {
+            result.data()[i] = this->data()[i] + other.data()[i];
+        }
+        break;
+    case Device::CUDA:
+        launch_vec_add(this->data(), other.data(), result.data(), this->size);
+        break;
     }
 
     if (this->requires_grad || other.requires_grad) {
@@ -239,24 +286,59 @@ Tensor Tensor::operator+(Tensor &other) {
     return result;
 }
 
+Tensor &Tensor::operator+=(Tensor &other) {
+    switch (this->device) {
+    case Device::CPU:
+        for (uint32_t i = 0; i < this->size; ++i) {
+            this->data()[i] += other.data()[i];
+        }
+        break;
+    case Device::CUDA:
+        launch_vec_add(this->data(), other.data(), this->data(), this->size);
+        break;
+    }
+    return *this;
+}
+
 Tensor &Tensor::operator+=(const Tensor &other) {
-    for (uint32_t i = 0; i < this->size; ++i) {
-        this->data()[i] += other.data()[i];
+    switch (this->device) {
+    case Device::CPU:
+        for (uint32_t i = 0; i < this->size; ++i) {
+            this->data()[i] += other.data()[i];
+        }
+        break;
+    case Device::CUDA:
+        launch_vec_add(this->data(), other.data(), this->data(), this->size);
+        break;
     }
     return *this;
 }
 
 Tensor &Tensor::operator-=(const Tensor &other) {
-    for (uint32_t i = 0; i < this->size; ++i) {
-        this->data()[i] -= other.data()[i];
+    switch (this->device) {
+    case Device::CPU:
+        for (uint32_t i = 0; i < this->size; ++i) {
+            this->data()[i] -= other.data()[i];
+        }
+        break;
+    case Device::CUDA:
+        launch_vec_subtract(this->data(), other.data(), this->data(), this->size);
+        break;
     }
     return *this;
 }
 
 Tensor Tensor::operator-(Tensor &other) {
-    Tensor result(this->shape, this->requires_grad || other.requires_grad);
-    for (uint32_t i = 0; i < this->size; ++i) {
-        result.data()[i] = this->data()[i] - other.data()[i];
+    Tensor result(this->shape, this->requires_grad || other.requires_grad, this->device);
+    switch (this->device) {
+    case Device::CPU:
+        for (uint32_t i = 0; i < this->size; ++i) {
+            result.data()[i] = this->data()[i] - other.data()[i];
+        }
+        break;
+    case Device::CUDA:
+        launch_vec_subtract(this->data(), other.data(), result.data(), this->size);
+        break;
     }
 
     if (this->requires_grad || other.requires_grad) {
@@ -267,10 +349,41 @@ Tensor Tensor::operator-(Tensor &other) {
     return result;
 }
 
+Tensor Tensor::operator*(float scalar) {
+    Tensor result(this->shape, this->requires_grad, this->device);
+    switch (this->device) {
+    case Device::CPU:
+        for (uint32_t i = 0; i < this->size; ++i) {
+            result.data()[i] = this->data()[i] * scalar;
+        }
+        break;
+    case Device::CUDA:
+        launch_scalar_multiply(this->data(), scalar, result.data(), this->size);
+        break;
+    }
+
+    if (this->requires_grad) {
+        auto other_tensor = std::make_shared<Tensor>(std::vector<uint32_t>{1}, false, this->device);
+        other_tensor->data()[0] = scalar;
+        other_tensor->to(this->device);
+        result.grad_fn =
+            std::make_shared<MulBackward>(std::make_shared<Tensor>(*this), other_tensor);
+    }
+
+    return result;
+}
+
 Tensor Tensor::operator*(Tensor &other) {
-    Tensor result(this->shape, this->requires_grad || other.requires_grad);
-    for (uint32_t i = 0; i < this->size; ++i) {
-        result.data()[i] = this->data()[i] * other.data()[i];
+    Tensor result(this->shape, this->requires_grad || other.requires_grad, this->device);
+    switch (this->device) {
+    case Device::CPU:
+        for (uint32_t i = 0; i < this->size; ++i) {
+            result.data()[i] = this->data()[i] * other.data()[i];
+        }
+        break;
+    case Device::CUDA:
+        launch_vec_multiply(this->data(), other.data(), result.data(), this->size);
+        break;
     }
 
     if (this->requires_grad || other.requires_grad) {
@@ -282,40 +395,48 @@ Tensor Tensor::operator*(Tensor &other) {
 }
 
 Tensor Tensor::operator+(float other) {
-    Tensor result(this->shape, this->requires_grad);
-    for (uint32_t i = 0; i < this->size; ++i) {
-        result.data()[i] = this->data()[i] + other;
-    }
-    return result;
-}
-
-Tensor Tensor::operator-(float other) {
-    Tensor result(this->shape, this->requires_grad);
-    for (uint32_t i = 0; i < this->size; ++i) {
-        result.data()[i] = this->data()[i] - other;
-    }
-    return result;
-}
-
-Tensor Tensor::operator*(float other) {
-    Tensor result(this->shape, this->requires_grad);
+    Tensor result(this->shape, this->requires_grad, this->device);
     switch (this->device) {
     case Device::CPU:
         for (uint32_t i = 0; i < this->size; ++i) {
-            result.data()[i] = this->data()[i] * other;
+            result.data()[i] = this->data()[i] + other;
         }
         break;
     case Device::CUDA:
-        launch_scalar_multiply(result.data(), other, this->size);
+        launch_scalar_add(this->data(), other, result.data(), this->size);
         break;
     }
 
     if (this->requires_grad) {
-        auto other_tensor = std::make_shared<Tensor>(std::vector<uint32_t>{1}, false);
-        other_tensor->data()[0] = other;
-        other_tensor->to(this->device);
-        result.grad_fn =
-            std::make_shared<MulBackward>(std::make_shared<Tensor>(*this), other_tensor);
+        Tensor cpu_tensor = Tensor(std::vector<uint32_t>{1}, false, Device::CPU);
+        cpu_tensor.data()[0] = other;
+        auto final_tensor = cpu_tensor.to(this->device);
+        result.grad_fn = std::make_shared<AddBackward>(std::make_shared<Tensor>(*this),
+                                                       std::make_shared<Tensor>(final_tensor));
+    }
+
+    return result;
+}
+
+Tensor Tensor::operator-(float other) {
+    Tensor result(this->shape, this->requires_grad, this->device);
+    switch (this->device) {
+    case Device::CPU:
+        for (uint32_t i = 0; i < this->size; ++i) {
+            result.data()[i] = this->data()[i] - other;
+        }
+        break;
+    case Device::CUDA:
+        launch_scalar_subtract(this->data(), other, result.data(), this->size);
+        break;
+    }
+
+    if (this->requires_grad) {
+        Tensor cpu_tensor = Tensor(std::vector<uint32_t>{1}, false, Device::CPU);
+        cpu_tensor.data()[0] = other;
+        auto final_tensor = cpu_tensor.to(this->device);
+        result.grad_fn = std::make_shared<MulBackward>(std::make_shared<Tensor>(*this),
+                                                       std::make_shared<Tensor>(final_tensor));
     }
 
     return result;
@@ -331,7 +452,7 @@ Tensor Tensor::operator/(float other) {
         }
         break;
     case Device::CUDA:
-        launch_scalar_divide(result.data(), other, this->size);
+        launch_scalar_divide(this->data(), other, result.data(), this->size);
         break;
     }
 
@@ -355,9 +476,15 @@ Tensor Tensor::operator/(Tensor &other) {
         }
         break;
     case Device::CUDA:
-        launch_vec_divide(result.data(), other.data(), this->size);
+        launch_vec_divide(this->data(), other.data(), result.data(), this->size);
         break;
     }
+
+    if (this->requires_grad) {
+        result.grad_fn = std::make_shared<DivBackward>(std::make_shared<Tensor>(*this),
+                                                       std::make_shared<Tensor>(other));
+    }
+
     return result;
 }
 
@@ -408,6 +535,9 @@ Tensor Tensor::matmul(Tensor &other) {
     return result;
 }
 
+/***
+ * Creates a copy of the Tensor on the new device
+ */
 Tensor Tensor::to(Device device) {
     if (this->device == device) {
         return *this;
@@ -421,8 +551,8 @@ Tensor Tensor::to(Device device) {
         cudaMemcpy(result.data(), this->data(), this->size * sizeof(float), cudaMemcpyHostToDevice);
         break;
     }
-    this->device = device;
-    this->storage->device = device;
+    result.device = device;
+    result.storage->device = device;
     return result;
 }
 
@@ -497,30 +627,22 @@ void Tensor::backward(Tensor &grad_output) {
 }
 
 Tensor Tensor::sum() {
-    Tensor result({1}, this->requires_grad);
+    Tensor result({1}, this->requires_grad, Device::CPU);
     result.data()[0] = 0.0f;
-    float *hostBuffer;
-    switch (this->device) {
-    case Device::CPU:
-        hostBuffer = this->data();
-        break;
-    case Device::CUDA:
-        hostBuffer = new float[this->size];
-        cudaMemcpy(hostBuffer, this->data(), this->size * sizeof(float), cudaMemcpyDeviceToHost);
-        break;
+    Device old_device = this->device;
+    Tensor cpuCopy = this->to(Device::CPU);
+
+    for (uint32_t i = 0; i < cpuCopy.size; i++) {
+        result.data()[0] += cpuCopy.data()[i];
     }
 
-    for (uint32_t i = 0; i < this->size; i++) {
-        result.data()[0] += hostBuffer[i];
-    }
-
-    result.to(this->device);
+    Tensor finalResult = result.to(old_device);
 
     if (this->requires_grad) {
-        result.grad_fn = std::make_shared<SumBackward>(std::make_shared<Tensor>(*this));
+        finalResult.grad_fn = std::make_shared<SumBackward>(std::make_shared<Tensor>(*this));
     }
 
-    return result;
+    return finalResult;
 }
 
 Tensor Tensor::mean() {

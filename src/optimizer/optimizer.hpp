@@ -8,9 +8,7 @@ class Optimizer {
 
     void zero_grad(Module &module) {
         for (auto &param : module.parameters()) {
-            if (*param.second->grad) {
-                std::fill_n((*param.second->grad)->data(), (*param.second->grad)->size, 0.0f);
-            }
+            param.second->zero_grad();
         }
     }
 

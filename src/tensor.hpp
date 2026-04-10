@@ -32,8 +32,10 @@ class Tensor {
                         Device device = Device::CPU);
     static Tensor ones_like(const Tensor &other);
 
+    void zero_grad();
+
     // Constructors
-    Tensor(std::vector<uint32_t> shape, bool requires_grad = false, Device device = Device::CPU);
+    Tensor(std::vector<uint32_t> shape, bool requires_grad, Device device);
     Tensor(const Tensor &other);                          // Deep copy
     Tensor(Tensor &&other) noexcept = default;            // Move constructor
     Tensor &operator=(const Tensor &other);               // Copy assignment
@@ -59,6 +61,8 @@ class Tensor {
     void random();
     void xavier_uniform(uint32_t fan_in, uint32_t fan_out);
 
+    Tensor operator-() const;
+    Tensor &operator+=(Tensor &other);
     Tensor &operator+=(const Tensor &other);
     Tensor &operator-=(const Tensor &other);
 

@@ -46,7 +46,7 @@ void sgemm(uint32_t m, uint32_t n, uint32_t k, float alpha, float *a, float *b, 
 }
 
 Tensor sin(Tensor &in) {
-    Tensor out(in.shape, in.requires_grad);
+    Tensor out(in.shape, in.requires_grad, in.device);
     for (uint32_t i = 0; i < in.size; i++) {
         out.data()[i] = std::sin(in.data()[i]);
     }
@@ -54,7 +54,7 @@ Tensor sin(Tensor &in) {
 }
 
 Tensor cos(Tensor &in) {
-    Tensor out(in.shape, in.requires_grad);
+    Tensor out(in.shape, in.requires_grad, in.device);
     for (uint32_t i = 0; i < in.size; i++) {
         out.data()[i] = std::cos(in.data()[i]);
     }
@@ -63,7 +63,7 @@ Tensor cos(Tensor &in) {
 
 Tensor relu(Tensor &in) {
     constexpr float leak = 0.01f; // LeakyReLU
-    Tensor out(in.shape, in.requires_grad);
+    Tensor out(in.shape, in.requires_grad, in.device);
     for (uint32_t i = 0; i < in.size; i++) {
         out.data()[i] = in.data()[i] > 0 ? in.data()[i] : leak * in.data()[i];
     }
@@ -103,9 +103,9 @@ Tensor mse(Tensor &y, Tensor &y_pred) {
         return squared.mean();
     }
     case Device::CUDA: {
-        Tensor out(y.shape, y.requires_grad, y.device);
-        launch_square_error(y_pred.data(), y.data(), out.data(), y.size);
-        return out.mean();
+        Tensor error = y_pred - y;
+        Tensor squared = error * error;
+        return squared.mean();
     }
     }
 }

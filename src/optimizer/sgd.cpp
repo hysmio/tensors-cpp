@@ -5,9 +5,10 @@ void SGD::step(Module &module) {
     for (auto &param : module.parameters()) {
         if (!*param.second->grad)
             continue;
-        for (uint32_t i = 0; i < (*param.second->grad)->size; i++) {
-            total_norm += (*param.second->grad)->data()[i] * (*param.second->grad)->data()[i];
-        }
+
+        auto squared = **param.second->grad * **param.second->grad;
+        auto sum = squared.sum().to(Device::CPU);
+        total_norm += sum.data()[0];
     }
     total_norm = std::sqrt(total_norm);
 

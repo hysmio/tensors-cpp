@@ -43,37 +43,105 @@ __host__ void launch_cuda_sgemm(uint32_t m, uint32_t n, uint32_t k, float alpha,
     cuda_sgemm<<<(m + 31) / 32, (k + 31) / 32>>>(m, n, k, alpha, a, b, beta, c);
 }
 
-__global__ void scalar_divide(float *a, float scalar, uint32_t size) {
+__global__ void scalar_divide(const float *a, float scalar, float *out, uint32_t size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
-        a[idx] /= scalar;
+        out[idx] = a[idx] / scalar;
     }
 }
 
-__host__ void launch_scalar_divide(float *a, float scalar, uint32_t size) {
-    scalar_divide<<<(size + 255) / 256, 256>>>(a, scalar, size);
+__host__ void launch_scalar_divide(const float *a, float scalar, float *out, uint32_t size) {
+    scalar_divide<<<(size + 255) / 256, 256>>>(a, scalar, out, size);
 }
 
-__global__ void scalar_multiply(float *a, float scalar, uint32_t size) {
+__global__ void scalar_multiply(const float *a, float scalar, float *out, uint32_t size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
-        a[idx] *= scalar;
+        out[idx] = a[idx] * scalar;
     }
 }
 
-__host__ void launch_scalar_multiply(float *a, float scalar, uint32_t size) {
-    scalar_multiply<<<(size + 255) / 256, 256>>>(a, scalar, size);
+__host__ void launch_scalar_multiply(const float *a, const float scalar, float *out,
+                                     uint32_t size) {
+    scalar_multiply<<<(size + 255) / 256, 256>>>(a, scalar, out, size);
 }
 
-__global__ void vec_divide(float *a, float *b, uint32_t size) {
+__global__ void scalar_add(const float *a, float scalar, float *out, uint32_t size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
-        a[idx] /= b[idx];
+        out[idx] = a[idx] + scalar;
     }
 }
 
-__host__ void launch_vec_divide(float *a, float *b, uint32_t size) {
-    vec_divide<<<(size + 255) / 256, 256>>>(a, b, size);
+__host__ void launch_scalar_add(const float *a, const float scalar, float *out, uint32_t size) {
+    scalar_add<<<(size + 255) / 256, 256>>>(a, scalar, out, size);
+}
+
+__global__ void scalar_addp(const float *a, const float *scalar, float *out, uint32_t size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        out[idx] = a[idx] + scalar[0];
+    }
+}
+
+__host__ void launch_scalar_addp(const float *a, const float *scalar, float *out, uint32_t size) {
+    scalar_addp<<<(size + 255) / 256, 256>>>(a, scalar, out, size);
+}
+
+__global__ void scalar_subtract(const float *a, float scalar, float *out, uint32_t size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        out[idx] = a[idx] - scalar;
+    }
+}
+
+__host__ void launch_scalar_subtract(const float *a, const float scalar, float *out,
+                                     uint32_t size) {
+    scalar_subtract<<<(size + 255) / 256, 256>>>(a, scalar, out, size);
+}
+
+__global__ void vec_divide(const float *a, const float *b, float *out, uint32_t size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        out[idx] = a[idx] / b[idx];
+    }
+}
+
+__host__ void launch_vec_divide(const float *a, const float *b, float *out, uint32_t size) {
+    vec_divide<<<(size + 255) / 256, 256>>>(a, b, out, size);
+}
+
+__global__ void vec_subtract(const float *a, const float *b, float *out, uint32_t size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        out[idx] = a[idx] - b[idx];
+    }
+}
+
+__host__ void launch_vec_subtract(const float *a, const float *b, float *out, uint32_t size) {
+    vec_subtract<<<(size + 255) / 256, 256>>>(a, b, out, size);
+}
+
+__global__ void vec_multiply(const float *a, const float *b, float *out, uint32_t size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        out[idx] = a[idx] * b[idx];
+    }
+}
+
+__host__ void launch_vec_multiply(const float *a, const float *b, float *out, uint32_t size) {
+    vec_multiply<<<(size + 255) / 256, 256>>>(a, b, out, size);
+}
+
+__global__ void vec_add(const float *a, const float *b, float *out, uint32_t size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        out[idx] = a[idx] + b[idx];
+    }
+}
+
+__host__ void launch_vec_add(const float *a, const float *b, float *out, uint32_t size) {
+    vec_add<<<(size + 255) / 256, 256>>>(a, b, out, size);
 }
 
 __global__ void linspace(float *a, float start, float end, uint32_t size) {

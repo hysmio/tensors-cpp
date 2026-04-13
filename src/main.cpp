@@ -5,22 +5,12 @@
 #include "tensor.hpp"
 #include <chrono>
 #include <cmath>
+#include <cstring>
 
 using namespace std;
 using namespace chrono;
 
 #include <sys/resource.h>
-
-void set_memory_limit(long limit_bytes) {
-    struct rlimit limit;
-    limit.rlim_cur = limit_bytes; // Soft limit
-    limit.rlim_max = limit_bytes; // Hard limit
-
-    // RLIMIT_AS: Max size of the process's virtual memory (address space)
-    if (setrlimit(RLIMIT_AS, &limit) != 0) {
-        perror("setrlimit failed");
-    }
-}
 
 static ostream &printTensor(ostream &stream, const Tensor &tensor, const string &prefix = "") {
     if (tensor.device == Device::CUDA) {
@@ -68,15 +58,15 @@ static ostream &operator<<(ostream &stream, const Tensor &tensor) {
     return stream;
 }
 
-int main() {
+int main(int argc, char *argv[]) {
     const int size = 100;
     const float PI = 3.14159265358979f;
-    set_memory_limit(1073741824);
 
-    std::cout << "Starting, 1GB limit" << std::endl;
+    std::cout << "Starting" << std::endl;
     Tensor x = Tensor::linspace(-1, 1, 100, Device::CPU);
     std::cout << "Created linspace tensor: " << x << std::endl;
-    x.shape.push_back(1);
+    x.shape = {size, 1};
+    x.strides = {1, 1};
     Tensor y({size, 1}, false, Device::CPU);
 
     for (int i = 0; i < size; i++) {
@@ -84,18 +74,42 @@ int main() {
     }
 
     std::cout << "Created y " << y << std::endl;
-    Device device = Device::CUDA;
+
+    Device device = Device::CPU;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--device") == 0) {
+            if (strcmp(argv[i + 1], "cuda") == 0) {
+                device = Device::CUDA;
+            } else if (strcmp(argv[i + 1], "cpu") == 0) {
+                device = Device::CPU;
+            } else {
+                std::cerr << "Invalid device: " << argv[i + 1] << std::endl;
+                return 1;
+            }
+            i++;
+        }
+    }
+
+    switch (device) {
+    case Device::CUDA:
+        std::cout << "Using CUDA" << std::endl;
+        break;
+    case Device::CPU:
+        std::cout << "Using CPU" << std::endl;
+        break;
+    }
 
     auto xCuda = x.to(device);
     auto yCuda = y.to(device);
 
-    Linear lin(1, 32, false, device);
-    Linear lin2(32, 1, false, device);
+    Linear lin(1, 16384, false, device);
+    Linear lin2(16384, 16384, false, device);
+    Linear lin3(16384, 1, false, device);
 
     SGD optimizer(0.0001, 5.f);
 
-    const int n_iterations = 750000;
-    const int print_every = 10000;
+    const int n_iterations = 20000;
+    const int print_every = 5;
 
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < n_iterations; i++) {
@@ -106,20 +120,13 @@ int main() {
         // cout << "lin2 grad: " << lin2.weights << '\n';
 
         Tensor h = lin.forward(xCuda);
-        cudaDeviceSynchronize();
-        // cout << "h: " << h << '\n';
         h = tanh(h);
-        cudaDeviceSynchronize();
-        // cout << "h after tanh: " << h << '\n';
         Tensor y_hat = lin2.forward(h);
-        cudaDeviceSynchronize();
-        // cout << "y_hat: " << y_hat << '\n';
+        y_hat = tanh(y_hat);
+        y_hat = lin3.forward(y_hat);
 
         Tensor loss = mse(y_hat, yCuda);
-        cudaDeviceSynchronize();
-        // cout << "loss: " << loss << '\n';
         loss.backward();
-        cudaDeviceSynchronize();
 
         auto loss_cpu = loss.to(Device::CPU);
 
@@ -133,6 +140,7 @@ int main() {
 
         optimizer.step(lin);
         optimizer.step(lin2);
+        optimizer.step(lin3);
     }
 
     cout << "Training completed!" << '\n';

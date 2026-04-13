@@ -1,11 +1,11 @@
 #include "tensor_data.hpp"
-#include <cuda_runtime.h>
-TensorData::TensorData(size_t size, Device device) : device(device), size(size) {
+#include "backend/cuda/cuda_backend.cuh"
 
+TensorData::TensorData(size_t size, Device device) : device(device), size(size) {
     if (device == Device::CPU) {
         data = new float[size];
     } else {
-        cudaMalloc(&data, size * sizeof(float));
+        NV_CHECK(cudaMalloc(&data, size * sizeof(float)));
     }
 }
 
@@ -14,8 +14,8 @@ TensorData::TensorData(std::vector<float> d, Device device) : device(device), si
         data = new float[d.size()];
         std::copy(d.begin(), d.end(), data);
     } else {
-        cudaMalloc(&data, d.size() * sizeof(float));
-        cudaMemcpy(data, d.data(), size * sizeof(float), cudaMemcpyHostToDevice);
+        NV_CHECK(cudaMalloc(&data, d.size() * sizeof(float)));
+        NV_CHECK(cudaMemcpy(data, d.data(), size * sizeof(float), cudaMemcpyHostToDevice));
     }
 }
 
@@ -24,8 +24,8 @@ TensorData::TensorData(const float *ptr, size_t size, Device device) : device(de
         data = new float[size];
         std::copy(ptr, ptr + size, data);
     } else {
-        cudaMalloc(&data, size * sizeof(float));
-        cudaMemcpy(data, ptr, size * sizeof(float), cudaMemcpyHostToDevice);
+        NV_CHECK(cudaMalloc(&data, size * sizeof(float)));
+        NV_CHECK(cudaMemcpy(data, ptr, size * sizeof(float), cudaMemcpyHostToDevice));
     }
 }
 

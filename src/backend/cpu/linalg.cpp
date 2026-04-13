@@ -82,7 +82,7 @@ Tensor tanh(Tensor &in) {
         }
         break;
     case Device::CUDA:
-        launch_tanh(out.data(), in.size);
+        launch_tanh_forward(in.data(), out.data(), in.size);
         break;
     }
     if (in.requires_grad) {

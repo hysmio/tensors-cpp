@@ -40,7 +40,9 @@ __global__ void cuda_sgemm(uint32_t m, uint32_t n, uint32_t k, float alpha, floa
 
 __host__ void launch_cuda_sgemm(uint32_t m, uint32_t n, uint32_t k, float alpha, float *a, float *b,
                                 float beta, float *c) {
-    cuda_sgemm<<<(m + 31) / 32, (k + 31) / 32>>>(m, n, k, alpha, a, b, beta, c);
+    dim3 blockDim(32, 32);
+    dim3 gridDim((m + 31) / 32, (k + 31) / 32);
+    cuda_sgemm<<<gridDim, blockDim>>>(m, n, k, alpha, a, b, beta, c);
 }
 
 __global__ void scalar_divide(const float *a, float scalar, float *out, uint32_t size) {
@@ -189,6 +191,81 @@ __global__ void square_error(float *a, float *b, float *c, uint32_t size) {
 
 __host__ void launch_square_error(float *a, float *b, float *c, uint32_t size) {
     square_error<<<(size + 255) / 256, 256>>>(a, b, c, size);
+}
+
+__global__ void fill_value(float *a, float value, uint32_t size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        a[idx] = value;
+    }
+}
+
+__host__ void launch_fill_value(float *a, float value, uint32_t size) {
+    fill_value<<<(size + 255) / 256, 256>>>(a, value, size);
+}
+
+__global__ void negate(const float *a, float *out, uint32_t size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        out[idx] = -a[idx];
+    }
+}
+
+__host__ void launch_negate(const float *a, float *out, uint32_t size) {
+    negate<<<(size + 255) / 256, 256>>>(a, out, size);
+}
+
+__global__ void transpose_copy(const float *in, float *out, uint32_t rows, uint32_t cols) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < rows * cols) {
+        int row = idx / cols;
+        int col = idx % cols;
+        out[col * rows + row] = in[idx];
+    }
+}
+
+__host__ void launch_transpose_copy(const float *in, float *out, uint32_t rows, uint32_t cols) {
+    uint32_t total = rows * cols;
+    transpose_copy<<<(total + 255) / 256, 256>>>(in, out, rows, cols);
+}
+
+__global__ void tanh_forward(const float *in, float *out, uint32_t size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        out[idx] = tanhf(in[idx]);
+    }
+}
+
+__host__ void launch_tanh_forward(const float *in, float *out, uint32_t size) {
+    tanh_forward<<<(size + 255) / 256, 256>>>(in, out, size);
+}
+
+__global__ void reduce_sum(const float *in, float *out, uint32_t size) {
+    extern __shared__ float sdata[];
+    uint32_t tid = threadIdx.x;
+    uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    sdata[tid] = (idx < size) ? in[idx] : 0.0f;
+    __syncthreads();
+
+    for (uint32_t s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            sdata[tid] += sdata[tid + s];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd(out, sdata[0]);
+    }
+}
+
+__host__ void launch_reduce_sum(const float *in, float *out, uint32_t size) {
+    const uint32_t blockSize = 256;
+    uint32_t gridSize = (size + blockSize - 1) / blockSize;
+    // Zero the output first since we use atomicAdd
+    cudaMemsetAsync(out, 0, sizeof(float));
+    reduce_sum<<<gridSize, blockSize, blockSize * sizeof(float)>>>(in, out, size);
 }
 
 // Tensor sin(Tensor &in) {

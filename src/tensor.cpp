@@ -107,10 +107,21 @@ Tensor &Tensor::operator=(const Tensor &other) {
         requires_grad = other.requires_grad;
         grad_fn = other.grad_fn;
         grad = other.grad;
+        device = other.device;
 
         if (other.is_contiguous()) {
-            std::copy(other.data(), other.data() + other.size, this->data());
+            switch (other.device) {
+            case Device::CPU:
+                std::copy(other.data(), other.data() + other.size, this->data());
+                break;
+            case Device::CUDA:
+                cudaMemcpy(this->data(), other.data(), other.size * sizeof(float),
+                           cudaMemcpyDeviceToDevice);
+                break;
+            }
         } else {
+            // Non-contiguous copy only supported on CPU
+            assert(other.device == Device::CPU);
             for (uint32_t i = 0; i < size; ++i) {
                 std::vector<uint32_t> indices(shape.size());
                 uint32_t remaining = i;
@@ -179,7 +190,7 @@ void Tensor::ones() {
         std::fill(this->data(), this->data() + this->size, 1.0f);
         break;
     case Device::CUDA:
-        cudaMemset(this->data(), 1.0f, this->size * sizeof(float));
+        launch_fill_value(this->data(), 1.0f, this->size);
         break;
     }
 }
@@ -258,7 +269,7 @@ Tensor Tensor::operator-() const {
         }
         break;
     case Device::CUDA:
-        launch_vec_subtract(result.data(), this->data(), result.data(), this->size);
+        launch_negate(this->data(), result.data(), this->size);
         break;
     }
     return result;
@@ -573,7 +584,7 @@ Tensor Tensor::transpose() {
         }
         break;
     case Device::CUDA:
-        launch_transpose(result.data(), this->shape[0], this->shape[1]);
+        launch_transpose_copy(this->data(), result.data(), this->shape[0], this->shape[1]);
         break;
     }
 
@@ -627,22 +638,25 @@ void Tensor::backward(Tensor &grad_output) {
 }
 
 Tensor Tensor::sum() {
-    Tensor result({1}, this->requires_grad, Device::CPU);
-    result.data()[0] = 0.0f;
-    Device old_device = this->device;
-    Tensor cpuCopy = this->to(Device::CPU);
+    Tensor result({1}, this->requires_grad, this->device);
 
-    for (uint32_t i = 0; i < cpuCopy.size; i++) {
-        result.data()[0] += cpuCopy.data()[i];
+    switch (this->device) {
+    case Device::CPU:
+        result.data()[0] = 0.0f;
+        for (uint32_t i = 0; i < this->size; i++) {
+            result.data()[0] += this->data()[i];
+        }
+        break;
+    case Device::CUDA:
+        launch_reduce_sum(this->data(), result.data(), this->size);
+        break;
     }
-
-    Tensor finalResult = result.to(old_device);
 
     if (this->requires_grad) {
-        finalResult.grad_fn = std::make_shared<SumBackward>(std::make_shared<Tensor>(*this));
+        result.grad_fn = std::make_shared<SumBackward>(std::make_shared<Tensor>(*this));
     }
 
-    return finalResult;
+    return result;
 }
 
 Tensor Tensor::mean() {

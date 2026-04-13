@@ -110,15 +110,14 @@ int main(int argc, char *argv[]) {
     SGD optimizer(0.00001, 2.f);
 
     const int n_iterations = 750000;
-    const int print_every = 5000;
+    const int print_every = 10;
 
     auto start = std::chrono::high_resolution_clock::now();
+    int lowered = 0;
     for (int i = 0; i < n_iterations; i++) {
         optimizer.zero_grad(lin);
-        // cout << "lin grad: " << lin.weights << '\n';
-
         optimizer.zero_grad(lin2);
-        // cout << "lin2 grad: " << lin2.weights << '\n';
+        optimizer.zero_grad(lin3);
 
         Tensor h = lin.forward(xCuda);
         h = tanh(h);
@@ -130,12 +129,23 @@ int main(int argc, char *argv[]) {
         loss.backward();
 
         if (i % print_every == 0 || i == n_iterations - 1) {
-            auto loss_cpu = loss.to(Device::CPU);
             auto end = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+            auto micro = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            auto loss_cpu = loss.to(Device::CPU);
             cout << "Iteration " << i << ": loss = " << loss_cpu.data()[0]
-                 << " time = " << duration.count() << "ms\n";
+                 << " time = " << duration.count() << "ms | avg = " << micro.count() / print_every
+                 << "us\n";
             start = end;
+            if (loss_cpu.data()[0] < 1e-3 && lowered == 0) {
+                lowered = 1;
+                optimizer.learning_rate /= 2;
+                cout << "LR decreased to " << optimizer.learning_rate
+                     << "! Loss < 1e-3 at iteration " << i << '\n';
+            } else if (loss_cpu.data()[0] < 1e-8) {
+                cout << "Loss < 1e-8 at iteration " << i << "! Training completed!" << '\n';
+                break;
+            }
         }
 
         optimizer.step({&lin, &lin2, &lin3});

@@ -102,14 +102,15 @@ int main(int argc, char *argv[]) {
     auto xCuda = x.to(device);
     auto yCuda = y.to(device);
 
-    Linear lin(1, 16384, false, device);
-    Linear lin2(16384, 16384, false, device);
-    Linear lin3(16384, 1, false, device);
+    int d_model = 256;
+    Linear lin(1, d_model, false, device);
+    Linear lin2(d_model, d_model, false, device);
+    Linear lin3(d_model, 1, false, device);
 
-    SGD optimizer(0.0001, 5.f);
+    SGD optimizer(0.00001, 2.f);
 
-    const int n_iterations = 20000;
-    const int print_every = 5;
+    const int n_iterations = 750000;
+    const int print_every = 5000;
 
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < n_iterations; i++) {
@@ -128,9 +129,8 @@ int main(int argc, char *argv[]) {
         Tensor loss = mse(y_hat, yCuda);
         loss.backward();
 
-        auto loss_cpu = loss.to(Device::CPU);
-
         if (i % print_every == 0 || i == n_iterations - 1) {
+            auto loss_cpu = loss.to(Device::CPU);
             auto end = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
             cout << "Iteration " << i << ": loss = " << loss_cpu.data()[0]
@@ -138,9 +138,7 @@ int main(int argc, char *argv[]) {
             start = end;
         }
 
-        optimizer.step(lin);
-        optimizer.step(lin2);
-        optimizer.step(lin3);
+        optimizer.step({&lin, &lin2, &lin3});
     }
 
     cout << "Training completed!" << '\n';

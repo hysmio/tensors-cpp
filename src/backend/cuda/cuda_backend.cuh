@@ -74,3 +74,13 @@ __global__ void tanh_forward(const float *in, float *out, uint32_t size);
 __host__ void launch_tanh_forward(const float *in, float *out, uint32_t size);
 
 __host__ void launch_reduce_sum(const float *in, float *out, uint32_t size);
+
+// Adds sum(in[i]^2) into *out via atomicAdd (caller must zero *out before the first call)
+__host__ void launch_accumulate_sq_norm(const float *in, float *out, uint32_t size);
+
+// param[i] -= grad[i] * clip_coef(total_sq_norm, max_norm) * lr
+// clip_coef = min(1, max_norm / sqrt(*total_sq_norm))
+__global__ void sgd_update(float *param, const float *grad, const float *total_sq_norm,
+                           float lr, float max_norm, uint32_t size);
+__host__ void launch_sgd_update(float *param, const float *grad, const float *total_sq_norm,
+                                float lr, float max_norm, uint32_t size);

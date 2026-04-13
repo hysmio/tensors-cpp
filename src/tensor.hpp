@@ -49,6 +49,10 @@ class Tensor {
     float *data();
     const float *data() const;
 
+    // Lightweight "copy" that shares underlying storage, grad, and grad_fn.
+    // Zero memcpy — for autograd node capture.
+    std::shared_ptr<Tensor> shared_copy() const;
+
     // Element access (handles strides correctly)
     float &at(const std::vector<uint32_t> &indices);
     float at(const std::vector<uint32_t> &indices) const;

@@ -31,7 +31,7 @@ Tensor Linear::forward(Tensor &x) {
 
     // Set up gradient function with original tensors
     if (x.requires_grad || this->weights->requires_grad) {
-        y.grad_fn = std::make_shared<LinearBackward>(std::make_shared<Tensor>(x), this->weights);
+        y.grad_fn = std::make_shared<LinearBackward>(x.shared_copy(), this->weights);
     }
 
     // TODO: cbf dealing with this atm, not necessary for what I'm trying to do

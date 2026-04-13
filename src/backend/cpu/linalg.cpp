@@ -40,7 +40,10 @@ void sgemm(uint32_t m, uint32_t n, uint32_t k, float alpha, float *a, float *b, 
             }
 
             // this allows for a single function to do `ab` & `ab + c` eg. `mx + b`
-            c[(cRow * k) + cCol] = (alpha * tmp) + (beta * c[(cRow * k) + cCol]);
+            float result = alpha * tmp;
+            if (beta != 0.0f)
+                result += beta * c[(cRow * k) + cCol];
+            c[(cRow * k) + cCol] = result;
         }
     }
 }
@@ -68,7 +71,7 @@ Tensor relu(Tensor &in) {
         out.data()[i] = in.data()[i] > 0 ? in.data()[i] : leak * in.data()[i];
     }
     if (in.requires_grad) {
-        out.grad_fn = std::make_shared<ReluBackward>(std::make_shared<Tensor>(in));
+        out.grad_fn = std::make_shared<ReluBackward>(in.shared_copy());
     }
     return out;
 }
@@ -87,8 +90,8 @@ Tensor tanh(Tensor &in) {
     }
     if (in.requires_grad) {
         out.grad_fn = std::make_shared<TanhBackward>(
-            std::make_shared<Tensor>(in),
-            std::make_shared<Tensor>(out) // Store output for backward
+            in.shared_copy(),
+            out.shared_copy() // Store output for backward
         );
     }
     return out;

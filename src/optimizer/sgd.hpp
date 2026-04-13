@@ -9,4 +9,5 @@ class SGD : public Optimizer {
         : Optimizer(learning_rate), max_grad_norm(max_grad_norm) {}
 
     void step(Module &module) override;
+    void step(std::vector<Module *> modules);
 };

@@ -34,7 +34,10 @@ __global__ void cuda_sgemm(uint32_t m, uint32_t n, uint32_t k, float alpha, floa
         }
 
         // this allows for a single function to do `ab` & `ab + c` eg. `mx + b`
-        c[(cRow * k) + cCol] = (alpha * tmp) + (beta * c[(cRow * k) + cCol]);
+        float result = alpha * tmp;
+        if (beta != 0.0f)
+            result += beta * c[(cRow * k) + cCol];
+        c[(cRow * k) + cCol] = result;
     }
 }
 
@@ -266,6 +269,45 @@ __host__ void launch_reduce_sum(const float *in, float *out, uint32_t size) {
     // Zero the output first since we use atomicAdd
     cudaMemsetAsync(out, 0, sizeof(float));
     reduce_sum<<<gridSize, blockSize, blockSize * sizeof(float)>>>(in, out, size);
+}
+
+__global__ void accumulate_sq_norm(const float *in, float *out, uint32_t size) {
+    extern __shared__ float sdata[];
+    uint32_t tid = threadIdx.x;
+    uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    float val = (idx < size) ? in[idx] : 0.0f;
+    sdata[tid] = val * val;
+    __syncthreads();
+
+    for (uint32_t s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (tid < s)
+            sdata[tid] += sdata[tid + s];
+        __syncthreads();
+    }
+
+    if (tid == 0)
+        atomicAdd(out, sdata[0]);
+}
+
+__host__ void launch_accumulate_sq_norm(const float *in, float *out, uint32_t size) {
+    const uint32_t bs = 256;
+    accumulate_sq_norm<<<(size + bs - 1) / bs, bs, bs * sizeof(float)>>>(in, out, size);
+}
+
+__global__ void sgd_update(float *param, const float *grad, const float *total_sq_norm, float lr,
+                           float max_norm, uint32_t size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        float norm = sqrtf(*total_sq_norm);
+        float clip = (norm > max_norm) ? (max_norm / norm) : 1.0f;
+        param[idx] -= grad[idx] * clip * lr;
+    }
+}
+
+__host__ void launch_sgd_update(float *param, const float *grad, const float *total_sq_norm,
+                                float lr, float max_norm, uint32_t size) {
+    sgd_update<<<(size + 255) / 256, 256>>>(param, grad, total_sq_norm, lr, max_norm, size);
 }
 
 // Tensor sin(Tensor &in) {

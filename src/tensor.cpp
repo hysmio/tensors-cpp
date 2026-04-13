@@ -160,6 +160,13 @@ float *Tensor::data() { return storage->ptr() + offset; }
 
 const float *Tensor::data() const { return storage->ptr() + offset; }
 
+std::shared_ptr<Tensor> Tensor::shared_copy() const {
+    auto t = std::make_shared<Tensor>(storage, offset, shape, strides, requires_grad, device);
+    t->grad_fn = grad_fn;
+    t->grad = grad;
+    return t;
+}
+
 // Element access with proper stride handling
 float &Tensor::at(const std::vector<uint32_t> &indices) {
     size_t idx = compute_linear_index(indices, strides, offset);
@@ -290,8 +297,7 @@ Tensor Tensor::operator+(Tensor &other) {
     }
 
     if (this->requires_grad || other.requires_grad) {
-        result.grad_fn = std::make_shared<AddBackward>(std::make_shared<Tensor>(*this),
-                                                       std::make_shared<Tensor>(other));
+        result.grad_fn = std::make_shared<AddBackward>(this->shared_copy(), other.shared_copy());
     }
 
     return result;
@@ -353,8 +359,7 @@ Tensor Tensor::operator-(Tensor &other) {
     }
 
     if (this->requires_grad || other.requires_grad) {
-        result.grad_fn = std::make_shared<SubBackward>(std::make_shared<Tensor>(*this),
-                                                       std::make_shared<Tensor>(other));
+        result.grad_fn = std::make_shared<SubBackward>(this->shared_copy(), other.shared_copy());
     }
 
     return result;
@@ -376,9 +381,7 @@ Tensor Tensor::operator*(float scalar) {
     if (this->requires_grad) {
         auto other_tensor = std::make_shared<Tensor>(std::vector<uint32_t>{1}, false, this->device);
         other_tensor->data()[0] = scalar;
-        other_tensor->to(this->device);
-        result.grad_fn =
-            std::make_shared<MulBackward>(std::make_shared<Tensor>(*this), other_tensor);
+        result.grad_fn = std::make_shared<MulBackward>(this->shared_copy(), other_tensor);
     }
 
     return result;
@@ -398,8 +401,7 @@ Tensor Tensor::operator*(Tensor &other) {
     }
 
     if (this->requires_grad || other.requires_grad) {
-        result.grad_fn = std::make_shared<MulBackward>(std::make_shared<Tensor>(*this),
-                                                       std::make_shared<Tensor>(other));
+        result.grad_fn = std::make_shared<MulBackward>(this->shared_copy(), other.shared_copy());
     }
 
     return result;
@@ -419,11 +421,9 @@ Tensor Tensor::operator+(float other) {
     }
 
     if (this->requires_grad) {
-        Tensor cpu_tensor = Tensor(std::vector<uint32_t>{1}, false, Device::CPU);
-        cpu_tensor.data()[0] = other;
-        auto final_tensor = cpu_tensor.to(this->device);
-        result.grad_fn = std::make_shared<AddBackward>(std::make_shared<Tensor>(*this),
-                                                       std::make_shared<Tensor>(final_tensor));
+        auto scalar_tensor = std::make_shared<Tensor>(std::vector<uint32_t>{1}, false, Device::CPU);
+        scalar_tensor->data()[0] = other;
+        result.grad_fn = std::make_shared<AddBackward>(this->shared_copy(), scalar_tensor);
     }
 
     return result;
@@ -443,11 +443,9 @@ Tensor Tensor::operator-(float other) {
     }
 
     if (this->requires_grad) {
-        Tensor cpu_tensor = Tensor(std::vector<uint32_t>{1}, false, Device::CPU);
-        cpu_tensor.data()[0] = other;
-        auto final_tensor = cpu_tensor.to(this->device);
-        result.grad_fn = std::make_shared<MulBackward>(std::make_shared<Tensor>(*this),
-                                                       std::make_shared<Tensor>(final_tensor));
+        auto scalar_tensor = std::make_shared<Tensor>(std::vector<uint32_t>{1}, false, Device::CPU);
+        scalar_tensor->data()[0] = other;
+        result.grad_fn = std::make_shared<MulBackward>(this->shared_copy(), scalar_tensor);
     }
 
     return result;
@@ -469,7 +467,7 @@ Tensor Tensor::operator/(float other) {
 
     if (this->requires_grad) {
         result.grad_fn =
-            std::make_shared<DivScalarBackward>(std::make_shared<Tensor>(*this), other);
+            std::make_shared<DivScalarBackward>(this->shared_copy(), other);
     }
 
     return result;
@@ -492,8 +490,7 @@ Tensor Tensor::operator/(Tensor &other) {
     }
 
     if (this->requires_grad) {
-        result.grad_fn = std::make_shared<DivBackward>(std::make_shared<Tensor>(*this),
-                                                       std::make_shared<Tensor>(other));
+        result.grad_fn = std::make_shared<DivBackward>(this->shared_copy(), other.shared_copy());
     }
 
     return result;
@@ -539,8 +536,8 @@ Tensor Tensor::matmul(Tensor &other) {
     }
 
     if (a_view.requires_grad || b_view.requires_grad) {
-        result.grad_fn = std::make_shared<MatmulBackward>(std::make_shared<Tensor>(a_view),
-                                                          std::make_shared<Tensor>(b_view));
+        result.grad_fn = std::make_shared<MatmulBackward>(a_view.shared_copy(),
+                                                          b_view.shared_copy());
     }
 
     return result;
@@ -653,7 +650,7 @@ Tensor Tensor::sum() {
     }
 
     if (this->requires_grad) {
-        result.grad_fn = std::make_shared<SumBackward>(std::make_shared<Tensor>(*this));
+        result.grad_fn = std::make_shared<SumBackward>(this->shared_copy());
     }
 
     return result;

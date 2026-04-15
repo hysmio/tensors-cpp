@@ -235,6 +235,26 @@ void Tensor::xavier_uniform(uint32_t fan_in, uint32_t fan_out) {
     }
 }
 
+void Tensor::tanh() {
+    float* data = this->data();
+    switch (this->device) {
+    case Device::CPU:
+        for (uint32_t i = 0; i < this->size; i++) {
+            data[i] = std::tanh(data[i]);
+        }
+        break;
+    case Device::CUDA:
+        launch_tanh_forward(data, data, this->size);
+        break;
+    }
+    if (this->requires_grad) {
+        this->grad_fn = std::make_shared<TanhBackward>(
+            this->shared_copy(),
+            this->shared_copy() // Store output for backward
+        );
+    }
+}
+
 // Indexing - returns a view that shares storage
 Tensor Tensor::operator[](uint32_t index) {
     assert(this->device != Device::CUDA);

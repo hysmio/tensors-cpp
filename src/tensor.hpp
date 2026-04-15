@@ -64,6 +64,7 @@ class Tensor {
     void ones();
     void random();
     void xavier_uniform(uint32_t fan_in, uint32_t fan_out);
+    void tanh();
 
     Tensor operator-() const;
     Tensor &operator+=(Tensor &other);

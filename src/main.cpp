@@ -120,9 +120,9 @@ int main(int argc, char *argv[]) {
         optimizer.zero_grad(lin3);
 
         Tensor h = lin.forward(xCuda);
-        h = tanh(h);
+        h.tanh();
         Tensor y_hat = lin2.forward(h);
-        y_hat = tanh(y_hat);
+        y_hat.tanh();
         y_hat = lin3.forward(y_hat);
 
         Tensor loss = mse(y_hat, yCuda);

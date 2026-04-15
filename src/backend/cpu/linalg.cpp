@@ -1,5 +1,3 @@
-#pragma once
-
 #include "autograd/grad_node.hpp"
 #include "pch.hpp"
 #include "tensor.hpp"

@@ -1,51 +1,101 @@
 #include "cuda_backend.cuh"
+#include "helpers.h"
 
-// #define CEIL_DIV (x, y) (1 + ((x - 1) / y))
+// Global cuBLAS handle and workspace - initialized lazily
+static cublasLtHandle_t g_cublasLtHandle = nullptr;
+static void *g_workspace = nullptr;
+static const size_t g_workspaceSize = 4 * 1024 * 1024; // 4MB workspace
 
-__global__ void cuda_sgemm(uint32_t m, uint32_t n, uint32_t k, float alpha, float *a, float *b,
-                           float beta, float *c) {
-    /// a = float[m * n] = float[4, 6]
-    /// b = float[n * k] = float[6, 5]
-    /// c = float[m * k] = float[4, 5]
-    ///
-    /// loop cidx 0..19
-    ///   loop i 0..5
-    ///     ~> aidx = cidx / n + i = (0 / 6 + 0) = 0
-    ///        bidx = cidx / k + i = (0 / 4 + 0) = 0
-    ///     ~> aidx = 0 / 6 + 1 = 1
-    ///        bidx = 0 / 4 + 1 = 1
-    ///     ...
-    ///   ~> cidx = 14 = 3rd row, 5th col
-    ///     ~> aidx = 14 % 6 + 0 * 6 = (0 + 2)
-    ///     ~> bidx = 14 % 5 + 0 = (4 + 0)
-    ///     ...
-    ///     ~> aidx = 14 % 6 + 3 * 6 = (2 + 18)
-
-    // go through each row of a
-    int cRow = blockIdx.x * blockDim.x + threadIdx.x;
-    int cCol = blockIdx.y * blockDim.y + threadIdx.y;
-    if (cRow < m && cCol < k) {
-        float tmp = 0.0;
-        for (uint32_t i = 0; i < n; i++) {
-            uint32_t aIdx = (cRow * n) + i; // cRow * aCols = aRow + i = aIdx
-            uint32_t bIdx = (i * k) + cCol; // bCols * i = cRow + cCol = bIdx
-            float result = a[aIdx] * b[bIdx];
-            tmp += result;
-        }
-
-        // this allows for a single function to do `ab` & `ab + c` eg. `mx + b`
-        float result = alpha * tmp;
-        if (beta != 0.0f)
-            result += beta * c[(cRow * k) + cCol];
-        c[(cRow * k) + cCol] = result;
+static void ensureCublasInitialized() {
+    if (g_cublasLtHandle == nullptr) {
+        checkCublasStatus(cublasLtCreate(&g_cublasLtHandle));
+        checkCudaStatus(cudaMalloc(&g_workspace, g_workspaceSize));
     }
+}
+
+// cuBLAS Lt single-precision GEMM wrapper
+void LtSgemm(cublasLtHandle_t ltHandle,
+             cublasOperation_t transa,
+             cublasOperation_t transb,
+             int m,
+             int n,
+             int k,
+             const float *alpha,
+             const float *A,
+             int lda,
+             const float *B,
+             int ldb,
+             const float *beta,
+             float *C,
+             int ldc,
+             void *workspace,
+             size_t workspaceSize) {
+    cublasLtMatmulDesc_t operationDesc = NULL;
+    cublasLtMatrixLayout_t Adesc = NULL, Bdesc = NULL, Cdesc = NULL;
+    cublasLtMatmulPreference_t preference = NULL;
+
+    int returnedResults = 0;
+    cublasLtMatmulHeuristicResult_t heuristicResult = {};
+
+    // Create operation descriptor
+    checkCublasStatus(cublasLtMatmulDescCreate(&operationDesc, CUBLAS_COMPUTE_32F, CUDA_R_32F));
+    checkCublasStatus(cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_TRANSA, &transa, sizeof(transa)));
+    checkCublasStatus(cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_TRANSB, &transb, sizeof(transb)));
+
+    // Create matrix descriptors
+    checkCublasStatus(cublasLtMatrixLayoutCreate(&Adesc, CUDA_R_32F, transa == CUBLAS_OP_N ? m : k, transa == CUBLAS_OP_N ? k : m, lda));
+    checkCublasStatus(cublasLtMatrixLayoutCreate(&Bdesc, CUDA_R_32F, transb == CUBLAS_OP_N ? k : n, transb == CUBLAS_OP_N ? n : k, ldb));
+    checkCublasStatus(cublasLtMatrixLayoutCreate(&Cdesc, CUDA_R_32F, m, n, ldc));
+
+    // Create preference handle
+    checkCublasStatus(cublasLtMatmulPreferenceCreate(&preference));
+    checkCublasStatus(cublasLtMatmulPreferenceSetAttribute(preference, CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &workspaceSize, sizeof(workspaceSize)));
+
+    // Get best algorithm
+    checkCublasStatus(cublasLtMatmulAlgoGetHeuristic(ltHandle, operationDesc, Adesc, Bdesc, Cdesc, Cdesc, preference, 1, &heuristicResult, &returnedResults));
+    if (returnedResults == 0) {
+        checkCublasStatus(CUBLAS_STATUS_NOT_SUPPORTED);
+    }
+
+    // Execute matmul
+    checkCublasStatus(cublasLtMatmul(ltHandle, operationDesc, alpha, A, Adesc, B, Bdesc, beta, C, Cdesc, C, Cdesc, &heuristicResult.algo, workspace, workspaceSize, 0));
+
+    // Cleanup
+    if (preference) checkCublasStatus(cublasLtMatmulPreferenceDestroy(preference));
+    if (Cdesc) checkCublasStatus(cublasLtMatrixLayoutDestroy(Cdesc));
+    if (Bdesc) checkCublasStatus(cublasLtMatrixLayoutDestroy(Bdesc));
+    if (Adesc) checkCublasStatus(cublasLtMatrixLayoutDestroy(Adesc));
+    if (operationDesc) checkCublasStatus(cublasLtMatmulDescDestroy(operationDesc));
 }
 
 __host__ void launch_cuda_sgemm(uint32_t m, uint32_t n, uint32_t k, float alpha, float *a, float *b,
                                 float beta, float *c) {
-    dim3 blockDim(32, 32);
-    dim3 gridDim((m + 31) / 32, (k + 31) / 32);
-    cuda_sgemm<<<gridDim, blockDim>>>(m, n, k, alpha, a, b, beta, c);
+    ensureCublasInitialized();
+
+    // Row-major A[m,n] @ B[n,k] -> C[m,k]
+    // cuBLAS uses column-major, so we use the identity: C = A*B <=> C^T = B^T * A^T
+    // When row-major data is viewed as column-major, it's effectively transposed.
+    // So we call: LtSgemm(B, A) with swapped dimensions to get C in row-major.
+    //
+    // cuBLAS computes: C_col = op(A_col) * op(B_col)
+    // For row-major C[m,k] = A[m,n] * B[n,k]:
+    //   - Pass B as first matrix (col-major view = B^T[k,n]), with CUBLAS_OP_T -> B[n,k]
+    //   - Pass A as second matrix (col-major view = A^T[n,m]), with CUBLAS_OP_T -> A[m,n]
+    //   - Result dimensions: m_cublas=k, n_cublas=m, k_cublas=n
+    //   - Output C (col-major view = C^T[k,m]), read as row-major = C[m,k]
+    LtSgemm(g_cublasLtHandle,
+            CUBLAS_OP_N,  // transa: B is already in correct orientation when viewed col-major
+            CUBLAS_OP_N,  // transb: A is already in correct orientation when viewed col-major
+            k,            // m: rows of op(B) and C (= cols of our result)
+            m,            // n: cols of op(A) and C (= rows of our result)
+            n,            // k: inner dimension
+            &alpha,
+            b, k,         // B with leading dim = k (its row stride in row-major = num cols)
+            a, n,         // A with leading dim = n (its row stride in row-major = num cols)
+            &beta,
+            c, k,         // C with leading dim = k
+            g_workspace,
+            g_workspaceSize);
 }
 
 __global__ void scalar_divide(const float *a, float scalar, float *out, uint32_t size) {

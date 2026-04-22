@@ -65,6 +65,7 @@ int main(int argc, char *argv[]) {
         {"iterations", 'i', flags::Type::Int, 2, 1, {}, "Number of training iterations"},
         {"print", 'p', flags::Type::Int, 1, 1, {}, "Print every N iterations"},
         {"model", 'm', flags::Type::Int, 768, 1, {}, "Model dimension (number of hidden units)"},
+        {"learning_rate", 'l', flags::Type::Float, 0.01f, 0, 1, "Learning rate"}
     });
 
     if (!parser.parse(argc, argv)) {
@@ -75,6 +76,7 @@ int main(int argc, char *argv[]) {
     const int n_iterations = parser.get_int("iterations");
     const int print_every = parser.get_int("print");
     const int d_model = parser.get_int("model");
+    const float lr = parser.get_float("learning_rate");
 
     Device device;
     if (device_str == "cuda") {
@@ -88,12 +90,12 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    const int size = 1000;
+    const int size = 100;
 
     std::cout << "Starting" << std::endl;
-    Tensor x = Tensor::linspace(-1, 1, 100, Device::CPU);
-    std::cout << "Created linspace tensor: " << x << std::endl;
-    x.shape = {size, 1};
+    Tensor x = Tensor::linspace(-1, 1, size, Device::CPU);
+    std::cout << "Created linspace tensor with " << size << " points" << std::endl;
+    x.shape = {(uint32_t)size, 1};
     x.strides = {1, 1};
     Tensor y({size, 1}, false, Device::CPU);
 
@@ -110,7 +112,7 @@ int main(int argc, char *argv[]) {
     Linear lin2(d_model, d_model, false, device);
     Linear lin3(d_model, 1, false, device);
 
-    SGD optimizer(0.00001, 2.f);
+    SGD optimizer(lr, 2.f);
 
     auto start = std::chrono::high_resolution_clock::now();
     auto true_start = start;
@@ -179,7 +181,9 @@ int main(int argc, char *argv[]) {
     // Print sample predictions
     Tensor h = lin.forward(xCuda);
     h = tanh(h);
-    Tensor y_pred = lin2.forward(h).to(Device::CPU);
+    Tensor h2 = lin2.forward(h);
+    h2 = tanh(h2);
+    Tensor y_pred = lin3.forward(h2).to(Device::CPU);
 
     cout << "\nSample predictions:\n";
     cout << "x\t\tsin(x)\t\tpredicted\n";

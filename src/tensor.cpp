@@ -235,6 +235,31 @@ void Tensor::xavier_uniform(uint32_t fan_in, uint32_t fan_out) {
     }
 }
 
+void Tensor::kaiming_uniform(uint32_t fan_in) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    // PyTorch default: kaiming_uniform with a=sqrt(5), leaky_relu mode
+    // bound = sqrt(3) * gain / sqrt(fan_in) = 1 / sqrt(fan_in)
+    float limit = 1.0f / std::sqrt(static_cast<float>(fan_in));
+    std::uniform_real_distribution<float> dis(-limit, limit);
+
+    float *data;
+    if (this->device == Device::CPU) {
+        data = this->data();
+    } else if (this->device == Device::CUDA) {
+        data = new float[this->size];
+    }
+
+    for (uint32_t i = 0; i < this->size; i++) {
+        data[i] = dis(gen);
+    }
+
+    if (this->device == Device::CUDA) {
+        cudaMemcpy(this->data(), data, this->size * sizeof(float), cudaMemcpyHostToDevice);
+        delete[] data;
+    }
+}
+
 void Tensor::tanh() {
     float* data = this->data();
     switch (this->device) {

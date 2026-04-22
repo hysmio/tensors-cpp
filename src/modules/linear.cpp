@@ -11,7 +11,7 @@ Linear::Linear(uint32_t in_features, uint32_t out_features, bool bias, Device de
                   : std::nullopt),
       device(device) {
     assert(in_features > 0 && out_features > 0);
-    this->weights->xavier_uniform(in_features, out_features);
+    this->weights->kaiming_uniform(in_features);
     if (this->biases) {
         this->biases.value()->zero();
     }

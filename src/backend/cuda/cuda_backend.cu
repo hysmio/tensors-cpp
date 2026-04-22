@@ -1,5 +1,4 @@
 #include "cuda_backend.cuh"
-#include "helpers.h"
 
 // Global cuBLAS handle and workspace - initialized lazily
 static cublasLtHandle_t g_cublasLtHandle = nullptr;
@@ -8,14 +7,13 @@ static const size_t g_workspaceSize = 4 * 1024 * 1024; // 4MB workspace
 
 static void ensureCublasInitialized() {
     if (g_cublasLtHandle == nullptr) {
-        checkCublasStatus(cublasLtCreate(&g_cublasLtHandle));
-        checkCudaStatus(cudaMalloc(&g_workspace, g_workspaceSize));
+        NVCUBLT_CHECK(cublasLtCreate(&g_cublasLtHandle));
+        NV_CHECK(cudaMalloc(&g_workspace, g_workspaceSize));
     }
 }
 
 // cuBLAS Lt single-precision GEMM wrapper
-void LtSgemm(cublasLtHandle_t ltHandle,
-             cublasOperation_t transa,
+void LtSgemm(cublasOperation_t transa,
              cublasOperation_t transb,
              int m,
              int n,
@@ -27,9 +25,9 @@ void LtSgemm(cublasLtHandle_t ltHandle,
              int ldb,
              const float *beta,
              float *C,
-             int ldc,
-             void *workspace,
-             size_t workspaceSize) {
+             int ldc) {
+    ensureCublasInitialized();
+    cublasLtHandle_t ltHandle = g_cublasLtHandle;
     cublasLtMatmulDesc_t operationDesc = NULL;
     cublasLtMatrixLayout_t Adesc = NULL, Bdesc = NULL, Cdesc = NULL;
     cublasLtMatmulPreference_t preference = NULL;
@@ -38,34 +36,34 @@ void LtSgemm(cublasLtHandle_t ltHandle,
     cublasLtMatmulHeuristicResult_t heuristicResult = {};
 
     // Create operation descriptor
-    checkCublasStatus(cublasLtMatmulDescCreate(&operationDesc, CUBLAS_COMPUTE_32F, CUDA_R_32F));
-    checkCublasStatus(cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_TRANSA, &transa, sizeof(transa)));
-    checkCublasStatus(cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_TRANSB, &transb, sizeof(transb)));
+    NVCUBLT_CHECK(cublasLtMatmulDescCreate(&operationDesc, CUBLAS_COMPUTE_32F, CUDA_R_32F));
+    NVCUBLT_CHECK(cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_TRANSA, &transa, sizeof(transa)));
+    NVCUBLT_CHECK(cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_TRANSB, &transb, sizeof(transb)));
 
     // Create matrix descriptors
-    checkCublasStatus(cublasLtMatrixLayoutCreate(&Adesc, CUDA_R_32F, transa == CUBLAS_OP_N ? m : k, transa == CUBLAS_OP_N ? k : m, lda));
-    checkCublasStatus(cublasLtMatrixLayoutCreate(&Bdesc, CUDA_R_32F, transb == CUBLAS_OP_N ? k : n, transb == CUBLAS_OP_N ? n : k, ldb));
-    checkCublasStatus(cublasLtMatrixLayoutCreate(&Cdesc, CUDA_R_32F, m, n, ldc));
+    NVCUBLT_CHECK(cublasLtMatrixLayoutCreate(&Adesc, CUDA_R_32F, transa == CUBLAS_OP_N ? m : k, transa == CUBLAS_OP_N ? k : m, lda));
+    NVCUBLT_CHECK(cublasLtMatrixLayoutCreate(&Bdesc, CUDA_R_32F, transb == CUBLAS_OP_N ? k : n, transb == CUBLAS_OP_N ? n : k, ldb));
+    NVCUBLT_CHECK(cublasLtMatrixLayoutCreate(&Cdesc, CUDA_R_32F, m, n, ldc));
 
     // Create preference handle
-    checkCublasStatus(cublasLtMatmulPreferenceCreate(&preference));
-    checkCublasStatus(cublasLtMatmulPreferenceSetAttribute(preference, CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &workspaceSize, sizeof(workspaceSize)));
+    NVCUBLT_CHECK(cublasLtMatmulPreferenceCreate(&preference));
+    NVCUBLT_CHECK(cublasLtMatmulPreferenceSetAttribute(preference, CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &g_workspaceSize, sizeof(g_workspaceSize)));
 
     // Get best algorithm
-    checkCublasStatus(cublasLtMatmulAlgoGetHeuristic(ltHandle, operationDesc, Adesc, Bdesc, Cdesc, Cdesc, preference, 1, &heuristicResult, &returnedResults));
+    NVCUBLT_CHECK(cublasLtMatmulAlgoGetHeuristic(ltHandle, operationDesc, Adesc, Bdesc, Cdesc, Cdesc, preference, 1, &heuristicResult, &returnedResults));
     if (returnedResults == 0) {
-        checkCublasStatus(CUBLAS_STATUS_NOT_SUPPORTED);
+        NVCUBLT_CHECK(CUBLAS_STATUS_NOT_SUPPORTED);
     }
 
     // Execute matmul
-    checkCublasStatus(cublasLtMatmul(ltHandle, operationDesc, alpha, A, Adesc, B, Bdesc, beta, C, Cdesc, C, Cdesc, &heuristicResult.algo, workspace, workspaceSize, 0));
+    NVCUBLT_CHECK(cublasLtMatmul(ltHandle, operationDesc, alpha, A, Adesc, B, Bdesc, beta, C, Cdesc, C, Cdesc, &heuristicResult.algo, g_workspace, g_workspaceSize, 0));
 
     // Cleanup
-    if (preference) checkCublasStatus(cublasLtMatmulPreferenceDestroy(preference));
-    if (Cdesc) checkCublasStatus(cublasLtMatrixLayoutDestroy(Cdesc));
-    if (Bdesc) checkCublasStatus(cublasLtMatrixLayoutDestroy(Bdesc));
-    if (Adesc) checkCublasStatus(cublasLtMatrixLayoutDestroy(Adesc));
-    if (operationDesc) checkCublasStatus(cublasLtMatmulDescDestroy(operationDesc));
+    if (preference) NVCUBLT_CHECK(cublasLtMatmulPreferenceDestroy(preference));
+    if (Cdesc) NVCUBLT_CHECK(cublasLtMatrixLayoutDestroy(Cdesc));
+    if (Bdesc) NVCUBLT_CHECK(cublasLtMatrixLayoutDestroy(Bdesc));
+    if (Adesc) NVCUBLT_CHECK(cublasLtMatrixLayoutDestroy(Adesc));
+    if (operationDesc) NVCUBLT_CHECK(cublasLtMatmulDescDestroy(operationDesc));
 }
 
 __host__ void launch_cuda_sgemm(uint32_t m, uint32_t n, uint32_t k, float alpha, float *a, float *b,
@@ -83,8 +81,7 @@ __host__ void launch_cuda_sgemm(uint32_t m, uint32_t n, uint32_t k, float alpha,
     //   - Pass A as second matrix (col-major view = A^T[n,m]), with CUBLAS_OP_T -> A[m,n]
     //   - Result dimensions: m_cublas=k, n_cublas=m, k_cublas=n
     //   - Output C (col-major view = C^T[k,m]), read as row-major = C[m,k]
-    LtSgemm(g_cublasLtHandle,
-            CUBLAS_OP_N,  // transa: B is already in correct orientation when viewed col-major
+    LtSgemm(CUBLAS_OP_N,  // transa: B is already in correct orientation when viewed col-major
             CUBLAS_OP_N,  // transb: A is already in correct orientation when viewed col-major
             k,            // m: rows of op(B) and C (= cols of our result)
             m,            // n: cols of op(A) and C (= rows of our result)
@@ -93,9 +90,7 @@ __host__ void launch_cuda_sgemm(uint32_t m, uint32_t n, uint32_t k, float alpha,
             b, k,         // B with leading dim = k (its row stride in row-major = num cols)
             a, n,         // A with leading dim = n (its row stride in row-major = num cols)
             &beta,
-            c, k,         // C with leading dim = k
-            g_workspace,
-            g_workspaceSize);
+            c, k);        // C with leading dim = k
 }
 
 __global__ void scalar_divide(const float *a, float scalar, float *out, uint32_t size) {

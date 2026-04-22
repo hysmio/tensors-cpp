@@ -86,6 +86,7 @@ class Tensor {
     Tensor to(Device device);
 
     Tensor matmul(Tensor &other);
+    Tensor matmul(Tensor &other, bool transpose_a, bool transpose_b);
 
     Tensor transpose();
     Tensor sum_to_shape(std::vector<uint32_t> &target_shape);
@@ -100,3 +101,4 @@ class Tensor {
 };
 
 Tensor matmul(Tensor &a, Tensor &b);
+Tensor matmul(Tensor &a, Tensor &b, bool transpose_a, bool transpose_b);

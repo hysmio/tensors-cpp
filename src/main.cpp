@@ -1,11 +1,12 @@
 #include "backend/cuda/cuda_backend.cuh"
+#include "flags.hpp"
 #include "linalg.hpp"
 #include "modules/linear.hpp"
 #include "optimizer/sgd.hpp"
 #include "tensor.hpp"
 #include <chrono>
 #include <cmath>
-#include <cstring>
+#include <nvtx3/nvToolsExt.h>
 
 using namespace std;
 using namespace chrono;
@@ -59,8 +60,35 @@ static ostream &operator<<(ostream &stream, const Tensor &tensor) {
 }
 
 int main(int argc, char *argv[]) {
-    const int size = 100;
-    const float PI = 3.14159265358979f;
+    flags::Parser parser({
+        {"device", 'd', flags::Type::String, std::string("cpu"), {}, {}, "Device (cpu or cuda)"},
+        {"iterations", 'i', flags::Type::Int, 2, 1, {}, "Number of training iterations"},
+        {"print", 'p', flags::Type::Int, 1, 1, {}, "Print every N iterations"},
+        {"model", 'm', flags::Type::Int, 768, 1, {}, "Model dimension (number of hidden units)"},
+    });
+
+    if (!parser.parse(argc, argv)) {
+        return 1;
+    }
+
+    std::string device_str = parser.get_string("device");
+    const int n_iterations = parser.get_int("iterations");
+    const int print_every = parser.get_int("print");
+    const int d_model = parser.get_int("model");
+
+    Device device;
+    if (device_str == "cuda") {
+        device = Device::CUDA;
+        std::cout << "Using CUDA" << std::endl;
+    } else if (device_str == "cpu") {
+        device = Device::CPU;
+        std::cout << "Using CPU" << std::endl;
+    } else {
+        std::cerr << "Invalid device: " << device_str << std::endl;
+        return 1;
+    }
+
+    const int size = 1000;
 
     std::cout << "Starting" << std::endl;
     Tensor x = Tensor::linspace(-1, 1, 100, Device::CPU);
@@ -75,49 +103,36 @@ int main(int argc, char *argv[]) {
 
     std::cout << "Created y " << y << std::endl;
 
-    Device device = Device::CPU;
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--device") == 0) {
-            if (strcmp(argv[i + 1], "cuda") == 0) {
-                device = Device::CUDA;
-            } else if (strcmp(argv[i + 1], "cpu") == 0) {
-                device = Device::CPU;
-            } else {
-                std::cerr << "Invalid device: " << argv[i + 1] << std::endl;
-                return 1;
-            }
-            i++;
-        }
-    }
-
-    switch (device) {
-    case Device::CUDA:
-        std::cout << "Using CUDA" << std::endl;
-        break;
-    case Device::CPU:
-        std::cout << "Using CPU" << std::endl;
-        break;
-    }
-
     auto xCuda = x.to(device);
     auto yCuda = y.to(device);
 
-    int d_model = 256;
     Linear lin(1, d_model, false, device);
     Linear lin2(d_model, d_model, false, device);
     Linear lin3(d_model, 1, false, device);
 
     SGD optimizer(0.00001, 2.f);
 
-    const int n_iterations = 750000;
-    const int print_every = 10;
-
     auto start = std::chrono::high_resolution_clock::now();
+    auto true_start = start;
     int lowered = 0;
+
     for (int i = 0; i < n_iterations; i++) {
+
+        if (i == 5) {
+            auto end = std::chrono::high_resolution_clock::now();
+            auto micro = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            cout << "Warmup iterations completed in " << micro.count() / 1000 << "ms\n";
+            start = end;
+            true_start = end;
+        }
+
+        nvtxRangePush("zero");
         optimizer.zero_grad(lin);
         optimizer.zero_grad(lin2);
         optimizer.zero_grad(lin3);
+        nvtxRangePop();
+
+        nvtxRangePush("forward");
 
         Tensor h = lin.forward(xCuda);
         h.tanh();
@@ -126,29 +141,37 @@ int main(int argc, char *argv[]) {
         y_hat = lin3.forward(y_hat);
 
         Tensor loss = mse(y_hat, yCuda);
+        nvtxRangePop();
+        
+        nvtxRangePush("backward");
         loss.backward();
-
-        if (i % print_every == 0 || i == n_iterations - 1) {
+        nvtxRangePop();
+        if ((i + 1) % print_every == 0 || i == n_iterations - 1) {
             auto end = std::chrono::high_resolution_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
             auto micro = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            auto total_micro =
+                std::chrono::duration_cast<std::chrono::microseconds>(end - true_start);
             auto loss_cpu = loss.to(Device::CPU);
-            cout << "Iteration " << i << ": loss = " << loss_cpu.data()[0]
-                 << " time = " << duration.count() << "ms | avg = " << micro.count() / print_every
-                 << "us\n";
+            cout << "Iteration " << i + 1 << ": loss = " << loss_cpu.data()[0]
+                 << " time = " << micro.count() / 1000
+                 << "ms | avg = " << (float)micro.count() / 1000.0 / (float)print_every
+                 << "ms | global_avg = " << (float)total_micro.count() / 1000.0 / (float)(i + 1)
+                 << "ms\n";
             start = end;
             if (loss_cpu.data()[0] < 1e-3 && lowered == 0) {
                 lowered = 1;
                 optimizer.learning_rate /= 2;
                 cout << "LR decreased to " << optimizer.learning_rate
-                     << "! Loss < 1e-3 at iteration " << i << '\n';
+                     << "! Loss < 1e-3 at iteration " << i + 1 << '\n';
             } else if (loss_cpu.data()[0] < 1e-8) {
-                cout << "Loss < 1e-8 at iteration " << i << "! Training completed!" << '\n';
+                cout << "Loss < 1e-8 at iteration " << i + 1 << "! Training completed!" << '\n';
                 break;
             }
         }
 
+        nvtxRangePush("optimizer step");
         optimizer.step({&lin, &lin2, &lin3});
+        nvtxRangePop();
     }
 
     cout << "Training completed!" << '\n';

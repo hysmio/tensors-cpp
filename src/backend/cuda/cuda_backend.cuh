@@ -10,8 +10,7 @@
 /// pointer mode is always host, to change it configure the appropriate matmul descriptor attribute
 /// matmul is not using cublas handle's configuration of math mode, here tensor ops are implicitly allowed; to change
 /// this configure appropriate attribute in the preference handle
-void LtSgemm(cublasLtHandle_t ltHandle,
-             cublasOperation_t transa,
+void LtSgemm(cublasOperation_t transa,
              cublasOperation_t transb,
              int m,
              int n,
@@ -23,9 +22,43 @@ void LtSgemm(cublasLtHandle_t ltHandle,
              int ldb,
              const float *beta, /* host pointer */
              float *C,
-             int ldc,
-             void *workspace,
-             size_t workspaceSize);
+             int ldc);
+
+#ifdef CUBLAS_API_H_
+// cuBLAS API errors
+static const char *_cudaGetErrorEnum(cublasStatus_t error)
+{
+    switch (error)
+    {
+        case CUBLAS_STATUS_SUCCESS:
+            return "CUBLAS_STATUS_SUCCESS";
+
+        case CUBLAS_STATUS_NOT_INITIALIZED:
+            return "CUBLAS_STATUS_NOT_INITIALIZED";
+
+        case CUBLAS_STATUS_ALLOC_FAILED:
+            return "CUBLAS_STATUS_ALLOC_FAILED";
+
+        case CUBLAS_STATUS_INVALID_VALUE:
+            return "CUBLAS_STATUS_INVALID_VALUE";
+
+        case CUBLAS_STATUS_ARCH_MISMATCH:
+            return "CUBLAS_STATUS_ARCH_MISMATCH";
+
+        case CUBLAS_STATUS_MAPPING_ERROR:
+            return "CUBLAS_STATUS_MAPPING_ERROR";
+
+        case CUBLAS_STATUS_EXECUTION_FAILED:
+            return "CUBLAS_STATUS_EXECUTION_FAILED";
+
+        case CUBLAS_STATUS_INTERNAL_ERROR:
+            return "CUBLAS_STATUS_INTERNAL_ERROR";
+    }
+
+    return "<unknown>";
+}
+#endif
+
 
 #define NV_CHECK(call)                                                                             \
     do {                                                                                           \
@@ -33,6 +66,15 @@ void LtSgemm(cublasLtHandle_t ltHandle,
         if (err != cudaSuccess) {                                                                  \
             fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__,                       \
                     cudaGetErrorString(err));                                                       \
+            abort();                                                                               \
+        }                                                                                          \
+    } while (0)
+
+#define NVCUBLT_CHECK(call)                                                                             \
+    do {                                                                                           \
+        cublasStatus_t err = (call);                                                                  \
+        if (err != CUBLAS_STATUS_SUCCESS) {                                                                  \
+            fprintf(stderr, "cuBLAS error at %s:%d: %s\n", __FILE__, __LINE__, _cudaGetErrorEnum(err));                       \
             abort();                                                                               \
         }                                                                                          \
     } while (0)

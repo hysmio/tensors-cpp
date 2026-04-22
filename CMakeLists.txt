@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.25.2)
 
 project(llm-cpp
     VERSION 1.0.0
@@ -20,6 +20,7 @@ endif()
 set(CMAKE_CXX_FLAGS "-Wall -Wextra")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -I src -DDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+set(CMAKE_CUDA_ARCHITECTURES "native")
 
 find_package(PkgConfig REQUIRED)
 find_package(CUDAToolkit REQUIRED)

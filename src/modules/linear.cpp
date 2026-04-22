@@ -26,8 +26,8 @@ Tensor Linear::forward(Tensor &x) {
     std::vector<uint32_t> result_shape = {x.shape[0], this->out_features};
 
     // x @ weights.T
-    Tensor transposed = this->weights->transpose();
-    Tensor y = matmul(x, transposed);
+    // Tensor transposed = this->weights->transpose();
+    Tensor y = matmul(x, *this->weights);
 
     // Set up gradient function with original tensors
     if (x.requires_grad || this->weights->requires_grad) {

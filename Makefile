@@ -13,7 +13,7 @@ all: release
 release:
 	@echo "Building llm-cpp (Release)..."
 	@mkdir -p $(BUILD_DIR)
-	@cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j$$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+	@cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo .. && make -j$$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 	@echo "Release build completed: $(BUILD_DIR)/bin/llm-cpp"
 
 # Debug build with AddressSanitizer

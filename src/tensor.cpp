@@ -149,7 +149,7 @@ void Tensor::zero_grad() {
             std::fill_n((*grad)->data(), (*grad)->size, 0.0f);
             break;
         case Device::CUDA:
-            cudaMemset((*grad)->data(), 0, (*grad)->size * sizeof(float));
+            cudaMemsetAsync((*grad)->data(), 0, (*grad)->size * sizeof(float), 0);
             break;
         }
     }
@@ -186,7 +186,7 @@ void Tensor::zero() {
         std::fill(this->data(), this->data() + this->size, 0.0f);
         break;
     case Device::CUDA:
-        cudaMemset(this->data(), 0, this->size * sizeof(float));
+        cudaMemsetAsync(this->data(), 0, this->size * sizeof(float), 0);
         break;
     }
 }
@@ -521,43 +521,87 @@ Tensor Tensor::matmul(Tensor &other) {
         throw std::runtime_error("Matmul: tensors must be on the same device");
     }
 
-    // Create local copies if we need to reshape (don't modify original references)
-    Tensor a_view = *this;
-    Tensor b_view = other;
+    // // Create local copies if we need to reshape (don't modify original references)
+    // Tensor a_view = *this;
+    // Tensor b_view = other;
 
-    if (a_view.shape.size() == 1) {
-        // Reshape 1D to row vector: (n,) -> (1, n)
-        a_view = Tensor(a_view.storage, a_view.offset, {1, a_view.shape[0]},
-                        {a_view.strides[0], a_view.strides[0]}, a_view.requires_grad,
-                        a_view.storage->device);
-    }
-    if (b_view.shape.size() == 1) {
-        // Reshape 1D to column vector: (n,) -> (n, 1)
-        b_view = Tensor(b_view.storage, b_view.offset, {b_view.shape[0], 1}, {b_view.strides[0], 0},
-                        b_view.requires_grad, b_view.storage->device);
-    }
+    // if (a_view.shape.size() == 1) {
+    //     // Reshape 1D to row vector: (n,) -> (1, n)
+    //     a_view = Tensor(a_view.storage, a_view.offset, {1, a_view.shape[0]},
+    //                     {a_view.strides[0], a_view.strides[0]}, a_view.requires_grad,
+    //                     a_view.storage->device);
+    // }
+    // if (b_view.shape.size() == 1) {
+    //     // Reshape 1D to column vector: (n,) -> (n, 1)
+    //     b_view = Tensor(b_view.storage, b_view.offset, {b_view.shape[0], 1}, {b_view.strides[0], 0},
+    //                     b_view.requires_grad, b_view.storage->device);
+    // }
 
-    assert(a_view.shape.size() == 2);
-    assert(b_view.shape.size() == 2);
-    assert(a_view.shape[1] == b_view.shape[0]);
+    assert(this->shape.size() == 2);
+    assert(other.shape.size() == 2);
 
-    std::vector<uint32_t> new_shape({a_view.shape[0], b_view.shape[1]});
-    Tensor result(new_shape, a_view.requires_grad || b_view.requires_grad, a_view.device);
+    // Check if we need A @ B^T (shapes [M,K] @ [N,K]) or standard A @ B ([M,K] @ [K,N])
+    bool transpose_b = (this->shape[1] == other.shape[1]);
 
-    switch (a_view.device) {
-    case Device::CPU:
-        sgemm(a_view.shape[0], a_view.shape[1], b_view.shape[1], 1.0F, a_view.data(), b_view.data(),
-              0.0F, result.data());
+    // Output shape: [M, N] where N = other.shape[0] if transposing, else other.shape[1]
+    uint32_t M = this->shape[0];
+    uint32_t K = this->shape[1];
+    uint32_t N = transpose_b ? other.shape[0] : other.shape[1];
+
+    std::vector<uint32_t> new_shape({M, N});
+    Tensor result(new_shape, this->requires_grad || other.requires_grad, this->device);
+
+    switch (this->device) {
+    case Device::CPU: {
+        Tensor b = other;
+        if (transpose_b) {
+            b = other.transpose();
+        }
+        sgemm(M, K, N, 1.0F, this->data(), b.data(), 0.0F, result.data());
         break;
-    case Device::CUDA:
-        launch_cuda_sgemm(a_view.shape[0], a_view.shape[1], b_view.shape[1], 1.0F, a_view.data(),
-                          b_view.data(), 0.0F, result.data());
+    }
+    case Device::CUDA: {
+        float alpha = 1.0f;
+        float beta = 0.0f;
+
+        if (transpose_b) {
+            // A[M,K] @ B[N,K]^T -> C[M,N]
+            // cuBLAS computes: C^T[N,M] = B[N,K] @ A^T[K,M]
+            // B row-major [N,K] viewed col-major = [K,N], need OP_T to get [N,K]
+            // A row-major [M,K] viewed col-major = [K,M], OP_N gives [K,M]
+            LtSgemm(CUBLAS_OP_T,              // transa: transpose B
+                CUBLAS_OP_N,                  // transb: A^T is what we want
+                N,                            // m: rows of result (in col-major view)
+                M,                            // n: cols of result (in col-major view)
+                K,                            // k: inner dimension
+                &alpha,
+                other.data(), K,              // B[N,K] with leading dim = K
+                this->data(), K,              // A[M,K] with leading dim = K
+                &beta,
+                result.data(), N);            // C[M,N] with leading dim = N
+        } else {
+            // Standard A[M,K] @ B[K,N] -> C[M,N]
+            // cuBLAS computes: C^T[N,M] = B^T[N,K] @ A^T[K,M]
+            // Both are already in correct orientation when viewed col-major
+            LtSgemm(CUBLAS_OP_N,              // transa: B is already transposed when viewed col-major
+                CUBLAS_OP_N,                  // transb: A is already transposed when viewed col-major
+                N,                            // m: rows of op(B) and C
+                M,                            // n: cols of op(A) and C
+                K,                            // k: inner dimension
+                &alpha,
+                other.data(), N,              // B[K,N] with leading dim = N
+                this->data(), K,              // A[M,K] with leading dim = K
+                &beta,
+                result.data(), N);            // C[M,N] with leading dim = N
+        }
         break;
     }
+    }
 
-    if (a_view.requires_grad || b_view.requires_grad) {
-        result.grad_fn = std::make_shared<MatmulBackward>(a_view.shared_copy(),
-                                                          b_view.shared_copy());
+    if (this->requires_grad || other.requires_grad) {
+        result.grad_fn = std::make_shared<MatmulBackward>(this->shared_copy(),
+                                                          other.shared_copy(),
+                                                          false, transpose_b);
     }
 
     return result;
@@ -585,6 +629,85 @@ Tensor Tensor::to(Device device) {
 }
 
 Tensor matmul(Tensor &a, Tensor &b) { return a.matmul(b); }
+
+Tensor matmul(Tensor &a, Tensor &b, bool transpose_a, bool transpose_b) {
+    return a.matmul(b, transpose_a, transpose_b);
+}
+
+Tensor Tensor::matmul(Tensor &other, bool transpose_a, bool transpose_b) {
+    if (this->device != other.device) {
+        throw std::runtime_error("Matmul: tensors must be on the same device");
+    }
+
+    assert(this->shape.size() == 2);
+    assert(other.shape.size() == 2);
+
+    // Compute effective dimensions after transpose
+    // A is [M,K], A^T is [K,M]
+    // B is [K,N], B^T is [N,K]
+    uint32_t A_rows = transpose_a ? this->shape[1] : this->shape[0];
+    uint32_t A_cols = transpose_a ? this->shape[0] : this->shape[1];
+    uint32_t B_rows = transpose_b ? other.shape[1] : other.shape[0];
+    uint32_t B_cols = transpose_b ? other.shape[0] : other.shape[1];
+
+    assert(A_cols == B_rows && "Inner dimensions must match");
+
+    uint32_t M = A_rows;
+    uint32_t K = A_cols;
+    uint32_t N = B_cols;
+
+    std::vector<uint32_t> new_shape({M, N});
+    Tensor result(new_shape, this->requires_grad || other.requires_grad, this->device);
+
+    switch (this->device) {
+    case Device::CPU: {
+        Tensor a_eff = transpose_a ? this->transpose() : *this;
+        Tensor b_eff = transpose_b ? other.transpose() : other;
+        sgemm(M, K, N, 1.0F, a_eff.data(), b_eff.data(), 0.0F, result.data());
+        break;
+    }
+    case Device::CUDA: {
+        float alpha = 1.0f;
+        float beta = 0.0f;
+
+        // Row-major to col-major trick: C = A @ B becomes C^T = B^T @ A^T
+        // When row-major data is viewed as col-major, it's transposed
+        // So we swap operand order and adjust ops accordingly
+
+        // A stored as [this->shape[0], this->shape[1]], ld = shape[1]
+        // B stored as [other.shape[0], other.shape[1]], ld = other.shape[1]
+
+        cublasOperation_t op_a_cublas, op_b_cublas;
+
+        // In cuBLAS call order: LtSgemm(op_B, op_A, ...)
+        // Row-major trick: C = A @ B → C^T = B^T @ A^T
+        // Row-major X viewed col-major = X^T (implicit transpose)
+        //
+        // For A: A_col = A^T
+        //   - If transpose_a=false: we want A^T in product, A_col already is A^T → OP_N
+        //   - If transpose_a=true: we want A in product, need to un-transpose → OP_T
+        // For B: B_col = B^T
+        //   - If transpose_b=false: we want B^T in product, B_col already is B^T → OP_N
+        //   - If transpose_b=true: we want B in product, need to un-transpose → OP_T
+        op_a_cublas = transpose_a ? CUBLAS_OP_T : CUBLAS_OP_N;
+        op_b_cublas = transpose_b ? CUBLAS_OP_T : CUBLAS_OP_N;
+
+        LtSgemm(op_b_cublas,           // op for B (first in cuBLAS due to swap)
+                op_a_cublas,           // op for A (second in cuBLAS due to swap)
+                N,                     // m: rows of C^T
+                M,                     // n: cols of C^T
+                K,                     // k: inner dimension
+                &alpha,
+                other.data(), other.shape[1],  // B with its row stride
+                this->data(), this->shape[1],  // A with its row stride
+                &beta,
+                result.data(), N);     // C[M,N] with ld=N
+        break;
+    }
+    }
+
+    return result;
+}
 
 // Autograd utility methods
 Tensor Tensor::transpose() {

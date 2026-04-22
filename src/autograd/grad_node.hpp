@@ -65,8 +65,11 @@ struct DivBackward : public GradNode {
 struct MatmulBackward : public GradNode {
     std::shared_ptr<Tensor> lhs_ptr;
     std::shared_ptr<Tensor> rhs_ptr;
+    bool transpose_a;
+    bool transpose_b;
 
-    MatmulBackward(std::shared_ptr<Tensor> lhs, std::shared_ptr<Tensor> rhs);
+    MatmulBackward(std::shared_ptr<Tensor> lhs, std::shared_ptr<Tensor> rhs,
+                   bool transpose_a = false, bool transpose_b = false);
 
     void backward(Tensor &grad_output) override;
 };

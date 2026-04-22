@@ -123,8 +123,9 @@ void DivBackward::backward(Tensor &grad_output) {
 }
 
 // MatmulBackward implementation
-MatmulBackward::MatmulBackward(std::shared_ptr<Tensor> lhs, std::shared_ptr<Tensor> rhs)
-    : lhs_ptr(lhs), rhs_ptr(rhs) {}
+MatmulBackward::MatmulBackward(std::shared_ptr<Tensor> lhs, std::shared_ptr<Tensor> rhs,
+                               bool transpose_a, bool transpose_b)
+    : lhs_ptr(lhs), rhs_ptr(rhs), transpose_a(transpose_a), transpose_b(transpose_b) {}
 
 void MatmulBackward::backward(Tensor &grad_output) {
     if (lhs_ptr->requires_grad) {
@@ -132,8 +133,20 @@ void MatmulBackward::backward(Tensor &grad_output) {
             *lhs_ptr->grad = std::make_shared<Tensor>(lhs_ptr->shape, false, lhs_ptr->device);
             (*lhs_ptr->grad)->zero();
         }
-        auto rhs_transposed = rhs_ptr->transpose();
-        auto grad = matmul(grad_output, rhs_transposed);
+        Tensor grad(lhs_ptr->shape, false, lhs_ptr->device);
+        if (!transpose_a && !transpose_b) {
+            // C = A @ B -> grad_A = grad @ B^T
+            grad = matmul(grad_output, *rhs_ptr, false, true);
+        } else if (!transpose_a && transpose_b) {
+            // C = A @ B^T -> grad_A = grad @ B
+            grad = matmul(grad_output, *rhs_ptr, false, false);
+        } else if (transpose_a && !transpose_b) {
+            // C = A^T @ B -> grad_A = B @ grad^T
+            grad = matmul(*rhs_ptr, grad_output, false, true);
+        } else {
+            // C = A^T @ B^T -> grad_A = B^T @ grad^T = (grad @ B)^T
+            grad = matmul(*rhs_ptr, grad_output, true, true);
+        }
         **lhs_ptr->grad += grad;
         if (lhs_ptr->grad_fn) {
             lhs_ptr->grad_fn->backward(grad);
@@ -145,8 +158,20 @@ void MatmulBackward::backward(Tensor &grad_output) {
             *rhs_ptr->grad = std::make_shared<Tensor>(rhs_ptr->shape, false, rhs_ptr->device);
             (*rhs_ptr->grad)->zero();
         }
-        auto lhs_transposed = lhs_ptr->transpose();
-        auto grad = matmul(lhs_transposed, grad_output);
+        Tensor grad(rhs_ptr->shape, false, rhs_ptr->device);
+        if (!transpose_a && !transpose_b) {
+            // C = A @ B -> grad_B = A^T @ grad
+            grad = matmul(*lhs_ptr, grad_output, true, false);
+        } else if (!transpose_a && transpose_b) {
+            // C = A @ B^T -> grad_B = grad^T @ A
+            grad = matmul(grad_output, *lhs_ptr, true, false);
+        } else if (transpose_a && !transpose_b) {
+            // C = A^T @ B -> grad_B = A @ grad
+            grad = matmul(*lhs_ptr, grad_output, false, false);
+        } else {
+            // C = A^T @ B^T -> grad_B = grad^T @ A^T = (A @ grad)^T
+            grad = matmul(grad_output, *lhs_ptr, true, true);
+        }
         **rhs_ptr->grad += grad;
         if (rhs_ptr->grad_fn) {
             rhs_ptr->grad_fn->backward(grad);
@@ -159,28 +184,30 @@ LinearBackward::LinearBackward(std::shared_ptr<Tensor> input, std::shared_ptr<Te
     : input_ptr(input), weights_ptr(weights) {}
 
 void LinearBackward::backward(Tensor &grad_output) {
-    // Gradient w.r.t. input: grad_output @ weights
+    // forward is y = x @ W^T (W stored as [out, in], so shape inference triggers transpose_b)
+    // grad_x = grad_out @ W
     if (input_ptr->requires_grad) {
         if (!*input_ptr->grad) {
             *input_ptr->grad = std::make_shared<Tensor>(input_ptr->shape, false, input_ptr->device);
             (*input_ptr->grad)->zero();
         }
-        auto grad = matmul(grad_output, *weights_ptr);
+        // grad_out[batch,out] @ W[out,in] = grad_x[batch,in]
+        auto grad = matmul(grad_output, *weights_ptr, false, false);
         **input_ptr->grad += grad;
         if (input_ptr->grad_fn) {
             input_ptr->grad_fn->backward(grad);
         }
     }
 
-    // Gradient w.r.t. weights: grad_output.T @ input
+    // grad_W = grad_out^T @ x
     if (weights_ptr->requires_grad) {
         if (!*weights_ptr->grad) {
             *weights_ptr->grad =
                 std::make_shared<Tensor>(weights_ptr->shape, false, weights_ptr->device);
             (*weights_ptr->grad)->zero();
         }
-        auto grad_transposed = grad_output.transpose();
-        auto grad = matmul(grad_transposed, *input_ptr);
+        // grad_out^T[out,batch] @ x[batch,in] = grad_W[out,in]
+        auto grad = matmul(grad_output, *input_ptr, true, false);
         **weights_ptr->grad += grad;
         if (weights_ptr->grad_fn) {
             weights_ptr->grad_fn->backward(grad);

@@ -5,7 +5,7 @@ TensorData::TensorData(size_t size, Device device) : device(device), size(size) 
     if (device == Device::CPU) {
         data = new float[size];
     } else {
-        NV_CHECK(cudaMalloc(&data, size * sizeof(float)));
+        NV_CHECK(cudaMallocAsync(&data, size * sizeof(float), 0));
     }
 }
 
@@ -14,8 +14,8 @@ TensorData::TensorData(std::vector<float> d, Device device) : device(device), si
         data = new float[d.size()];
         std::copy(d.begin(), d.end(), data);
     } else {
-        NV_CHECK(cudaMalloc(&data, d.size() * sizeof(float)));
-        NV_CHECK(cudaMemcpy(data, d.data(), size * sizeof(float), cudaMemcpyHostToDevice));
+        NV_CHECK(cudaMallocAsync(&data, d.size() * sizeof(float), 0));
+        NV_CHECK(cudaMemcpyAsync(data, d.data(), size * sizeof(float), cudaMemcpyHostToDevice, 0));
     }
 }
 
@@ -24,8 +24,8 @@ TensorData::TensorData(const float *ptr, size_t size, Device device) : device(de
         data = new float[size];
         std::copy(ptr, ptr + size, data);
     } else {
-        NV_CHECK(cudaMalloc(&data, size * sizeof(float)));
-        NV_CHECK(cudaMemcpy(data, ptr, size * sizeof(float), cudaMemcpyHostToDevice));
+        NV_CHECK(cudaMallocAsync(&data, size * sizeof(float), 0));
+        NV_CHECK(cudaMemcpyAsync(data, ptr, size * sizeof(float), cudaMemcpyHostToDevice, 0));
     }
 }
 
@@ -33,7 +33,7 @@ TensorData::~TensorData() {
     if (device == Device::CPU) {
         delete[] data;
     } else {
-        cudaFree(data);
+        cudaFreeAsync(data, 0);
     }
 }
 
